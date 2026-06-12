@@ -47,7 +47,7 @@ There are no automated tests in this project. CI runs clippy, an Android cross-t
 | `tray.rs` | System tray menu with dynamic attendance status |
 | `credentials.rs` | System keyring integration for password storage |
 | `db/` | SQLite schema migrations, task/project cache, pending timesheets, timesheet log |
-| `icon.rs` | Dynamic tray icon generation (procedural P-in-clock-ring; `src/bin/gen_icon.rs` regenerates `app-icon.png`) |
+| `icon.rs` | Dynamic tray icon generation (procedural P-in-clock-ring; `tools/gen-icon/` regenerates `app-icon.png`: `cargo run --manifest-path tools/gen-icon/Cargo.toml`) |
 
 ### Odoo communication
 

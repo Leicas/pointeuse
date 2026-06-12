@@ -392,7 +392,7 @@ impl OdooClient {
                 }
             }
         }
-        users.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
+        users.sort_by_key(|a| a.1.to_lowercase());
         Ok(users)
     }
 

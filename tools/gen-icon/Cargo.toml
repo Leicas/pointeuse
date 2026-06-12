@@ -1,0 +1,15 @@
+[package]
+name = "gen-icon"
+version = "0.1.0"
+description = "Regenerates app-icon.png from the procedural Pointeuse icon (kept out of src-tauri so the Tauri bundler doesn't try to ship it)"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "gen_icon"
+path = "src/main.rs"
+
+[dependencies]
+png = "0.18"
+
+[workspace]
