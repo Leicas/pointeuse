@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Pointeuse tray icon — works at 16x16, 32x32, 256x256 -->
+  <!-- Outer clock ring -->
+  <circle cx="128" cy="128" r="112" fill="none" stroke="#3b82f6" stroke-width="16" opacity="0.25"/>
+  <!-- Progress arc (top-right quadrant accent) -->
+  <path d="M128 16 A112 112 0 0 1 240 128" fill="none" stroke="#3b82f6" stroke-width="16" stroke-linecap="round"/>
+  <!-- P stem -->
+  <line x1="100" y1="72" x2="100" y2="184" stroke="#ffffff" stroke-width="16" stroke-linecap="round"/>
+  <!-- P bowl (half-circle attached to the stem's upper part) -->
+  <path d="M100 72 A28 28 0 0 1 100 128" fill="none" stroke="#ffffff" stroke-width="16" stroke-linecap="round"/>
+  <!-- 12 o'clock tick -->
+  <line x1="128" y1="24" x2="128" y2="44" stroke="#3b82f6" stroke-width="8" stroke-linecap="round"/>
+  <!-- 3 o'clock tick -->
+  <line x1="232" y1="128" x2="212" y2="128" stroke="#3b82f6" stroke-width="8" stroke-linecap="round"/>
+  <!-- 6 o'clock tick -->
+  <line x1="128" y1="232" x2="128" y2="212" stroke="#3b82f6" stroke-width="8" stroke-linecap="round"/>
+  <!-- 9 o'clock tick -->
+  <line x1="24" y1="128" x2="44" y2="128" stroke="#3b82f6" stroke-width="8" stroke-linecap="round"/>
+</svg>

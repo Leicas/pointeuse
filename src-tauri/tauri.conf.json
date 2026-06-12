@@ -1,0 +1,58 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Pointeuse",
+  "version": "0.1.0",
+  "identifier": "fr.weill-duflos.pointeuse",
+  "build": {
+    "frontendDist": "../src",
+    "beforeDevCommand": "",
+    "beforeBuildCommand": ""
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Pointeuse",
+        "width": 480,
+        "height": 680,
+        "minWidth": 360,
+        "minHeight": 500,
+        "resizable": true,
+        "decorations": false,
+        "center": true,
+        "visible": true
+      }
+    ],
+    "withGlobalTauri": true,
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["deb", "appimage", "nsis", "app", "dmg"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "publisher": "Antoine Weill--Duflos",
+    "category": "Utility",
+    "shortDescription": "Odoo time tracker",
+    "createUpdaterArtifacts": true,
+    "android": {
+      "minSdkVersion": 26
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDdBRDVCNEQ5NDY0REUyNTMKUldSVDRrMUcyYlRWZW9KZnNMdGFkMXV0clZKWit4Q0tPbklmSjZlOTFFWjl1elJIUlBzSXhKM2sK",
+      "windows": {
+        "installMode": "passive"
+      },
+      "endpoints": ["https://github.com/Leicas/pointeuse/releases/latest/download/latest.json"],
+      "dialog": true
+    }
+  }
+}

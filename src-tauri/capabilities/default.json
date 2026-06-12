@@ -1,0 +1,42 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "enables the default permissions",
+  "windows": [
+    "main",
+    "reminder",
+    "dashboard"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:window:allow-close",
+    "core:window:allow-create",
+    "core:window:allow-get-all-windows",
+    "core:webview:allow-create-webview-window",
+    "core:webview:allow-get-all-webviews",
+    "store:allow-get",
+    "store:allow-set",
+    "store:allow-delete",
+    "store:allow-keys",
+    "store:allow-clear",
+    "store:allow-load",
+    "store:allow-save",
+    "notification:default",
+    "notification:allow-is-permission-granted",
+    "notification:allow-request-permission",
+    "notification:allow-notify",
+    "notification:allow-show",
+    "notification:allow-register-listener",
+    "notification:allow-register-action-types",
+    "notification:allow-remove-active",
+    "notification:allow-create-channel",
+    "notification:allow-list-channels",
+    "schedule-task:default",
+    "opener:default"
+  ]
+}

@@ -1,0 +1,41 @@
+[package]
+name = "time-tracker"
+version = "0.1.0"
+description = "Pointeuse - Odoo time tracker for desktop and Android"
+authors = ["Antoine Weill--Duflos"]
+license = "MIT"
+repository = "https://github.com/Leicas/pointeuse"
+edition = "2021"
+rust-version = "1.77.2"
+default-run = "time-tracker"
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png", "image-ico"] }
+tauri-plugin-store = "2"
+tauri-plugin-log = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.39", features = ["bundled"] }
+reqwest = { version = "0.13", features = ["rustls", "json"], default-features = false }
+quick-xml = "0.39"
+chrono = { version = "0.4", features = ["serde"] }
+tokio = { version = "1", features = ["rt-multi-thread", "time", "sync"] }
+thiserror = "2"
+log = "0.4"
+png = "0.18"
+tauri-plugin-notification = "2.3.3"
+tauri-plugin-schedule-task = { git = "https://github.com/charlesschaefer/tauri-plugin-schedule-task", branch = "main" }
+tauri-plugin-opener = "2"
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+tauri-plugin-autostart = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-single-instance = "2"
+keyring = { version = "3", features = ["windows-native"] }

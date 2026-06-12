@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop-only",
+  "description": "permissions for desktop-only features",
+  "platforms": ["linux", "macOS", "windows"],
+  "windows": [
+    "main",
+    "reminder",
+    "dashboard"
+  ],
+  "permissions": [
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "autostart:allow-is-enabled"
+  ]
+}

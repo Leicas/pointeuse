@@ -1,0 +1,13 @@
+node_modules/
+.claude/
+src-tauri/target/
+src-tauri/gen/
+.tauri-signing.key
+.tauri-signing.key.pub
+SECRETS.local.md
+*.jks
+*.keystore
+*.log
+.DS_Store
+Thumbs.db
+*.local.ps1

@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pointeuse — Dashboard</title>
+  <link rel="stylesheet" href="styles/main.css" />
+  <link rel="stylesheet" href="styles/themes.css" />
+  <link rel="stylesheet" href="styles/dashboard.css" />
+  <script>
+    try {
+      const t = localStorage.getItem('pointeuse-theme');
+      if (t && t !== 'dark') document.documentElement.setAttribute('data-theme', t);
+    } catch(_) {}
+  </script>
+</head>
+<body>
+
+  <!-- Custom Titlebar -->
+  <header class="titlebar" data-tauri-drag-region>
+    <div class="titlebar-left" data-tauri-drag-region>
+      <!-- App mini logo -->
+      <svg class="titlebar-logo" width="16" height="16" viewBox="0 0 256 256" fill="none">
+        <circle cx="128" cy="128" r="112" stroke="var(--brand)" stroke-width="16" opacity="0.4"/>
+        <path d="M128 16 A112 112 0 0 1 240 128" fill="none" stroke="var(--brand)" stroke-width="16" stroke-linecap="round"/>
+        <line x1="108" y1="72" x2="108" y2="184" stroke="var(--text-primary)" stroke-width="16" stroke-linecap="round"/>
+        <line x1="148" y1="72" x2="148" y2="184" stroke="var(--text-primary)" stroke-width="16" stroke-linecap="round"/>
+        <line x1="108" y1="128" x2="148" y2="128" stroke="var(--text-primary)" stroke-width="14" stroke-linecap="round"/>
+      </svg>
+      <span class="titlebar-title" data-tauri-drag-region>Dashboard</span>
+    </div>
+
+    <div class="titlebar-center" data-tauri-drag-region>
+      <div class="titlebar-search" id="titlebar-search-trigger" role="button" tabindex="0">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <span class="titlebar-search-text">Search tasks...</span>
+        <span class="kbd">Ctrl+K</span>
+      </div>
+    </div>
+
+    <div class="titlebar-controls">
+      <button class="titlebar-btn titlebar-btn--close" id="titlebar-close" aria-label="Close">
+        <svg width="10" height="10" viewBox="0 0 10 10">
+          <line x1="0" y1="0" x2="10" y2="10" stroke="currentColor" stroke-width="1.2"/>
+          <line x1="10" y1="0" x2="0" y2="10" stroke="currentColor" stroke-width="1.2"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Toast -->
+  <div id="dashboard-toast" class="toast"></div>
+
+  <!-- Sidebar backdrop for mobile -->
+  <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+  <!-- Main Layout -->
+  <div class="dashboard-layout">
+
+    <!-- ======================== SIDEBAR ======================== -->
+    <aside id="sidebar">
+      <div class="sidebar-header">Navigation</div>
+
+      <button class="sidebar-item active" data-section="my-tasks">
+        <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+          <circle cx="8.5" cy="7" r="4"/>
+          <polyline points="17 11 19 13 23 9"/>
+        </svg>
+        <span>My Tasks</span>
+        <span class="sidebar-count" id="count-my-tasks">0</span>
+      </button>
+
+      <button class="sidebar-item" data-section="today">
+        <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <polyline points="12 6 12 12 16 14"/>
+        </svg>
+        <span>Today</span>
+        <span class="sidebar-count" id="count-today">0</span>
+      </button>
+
+      <button class="sidebar-item" data-section="all-tasks">
+        <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="7" rx="1"/>
+          <rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="3" y="14" width="7" height="7" rx="1"/>
+          <rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
+        <span>All Tasks</span>
+        <span class="sidebar-count" id="count-all-tasks">0</span>
+      </button>
+
+      <button class="sidebar-item" data-section="done">
+        <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+        <span>Done</span>
+        <span class="sidebar-count" id="count-done">0</span>
+      </button>
+
+      <div class="sidebar-divider"></div>
+
+      <button class="sidebar-item" data-section="timelog">
+        <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 8v4l3 3"/>
+          <circle cx="12" cy="12" r="10"/>
+        </svg>
+        <span>Time Log</span>
+      </button>
+    </aside>
+
+    <!-- ======================== MAIN AREA ======================== -->
+    <div class="dashboard-main">
+
+      <!-- Toolbar -->
+      <div id="toolbar">
+        <!-- Sidebar toggle for mobile -->
+        <button class="btn-icon btn-sidebar-toggle" id="btn-sidebar-toggle" aria-label="Toggle sidebar">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="3" y1="6" x2="21" y2="6"/>
+            <line x1="3" y1="12" x2="21" y2="12"/>
+            <line x1="3" y1="18" x2="21" y2="18"/>
+          </svg>
+        </button>
+
+        <div class="toolbar-group">
+          <span class="toolbar-label">Group</span>
+          <div class="toggle-group" id="group-toggle">
+            <button class="toggle-btn active" data-group="state">State</button>
+            <button class="toggle-btn" data-group="project">Project</button>
+          </div>
+        </div>
+
+        <div class="toolbar-group">
+          <span class="toolbar-label">Sort</span>
+          <select class="toolbar-select" id="sort-select">
+            <option value="deadline">Deadline</option>
+            <option value="updated">Updated</option>
+            <option value="priority">Priority</option>
+            <option value="name">Name</option>
+          </select>
+        </div>
+
+        <div class="toolbar-group">
+          <button class="filter-chip" data-filter="high-priority">
+            <span>High Priority</span>
+          </button>
+          <button class="filter-chip" data-filter="overdue">
+            <span>Overdue</span>
+          </button>
+          <button class="filter-chip" data-filter="stale">
+            <span>Stale</span>
+          </button>
+        </div>
+
+        <div class="toolbar-spacer"></div>
+
+        <input type="text" class="form-input" id="dashboard-search" placeholder="Filter..." style="width: 160px; padding: 4px 10px; font-size: 12px;" />
+
+        <button class="btn btn-primary btn-sm" id="btn-new-task">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          New Task
+        </button>
+      </div>
+
+      <!-- Kanban Board / Main content area (JS renders into this) -->
+      <div id="main-area">
+
+        <!-- In Progress -->
+        <div class="kanban-column" data-state="01_in_progress">
+          <div class="kanban-header">
+            <div class="kanban-state-dot state-dot-in-progress"></div>
+            <span class="kanban-column-title">In Progress</span>
+            <span class="kanban-count">0</span>
+            <button class="kanban-collapse-btn" aria-label="Collapse column">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+          </div>
+          <div class="kanban-body">
+            <div class="kanban-empty">No tasks</div>
+          </div>
+        </div>
+
+        <!-- Changes Requested -->
+        <div class="kanban-column" data-state="02_changes_requested">
+          <div class="kanban-header">
+            <div class="kanban-state-dot state-dot-changes-requested"></div>
+            <span class="kanban-column-title">Changes Requested</span>
+            <span class="kanban-count">0</span>
+            <button class="kanban-collapse-btn" aria-label="Collapse column">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+          </div>
+          <div class="kanban-body">
+            <div class="kanban-empty">No tasks</div>
+          </div>
+        </div>
+
+        <!-- Approved -->
+        <div class="kanban-column" data-state="03_approved">
+          <div class="kanban-header">
+            <div class="kanban-state-dot state-dot-approved"></div>
+            <span class="kanban-column-title">Approved</span>
+            <span class="kanban-count">0</span>
+            <button class="kanban-collapse-btn" aria-label="Collapse column">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+          </div>
+          <div class="kanban-body">
+            <div class="kanban-empty">No tasks</div>
+          </div>
+        </div>
+
+        <!-- Waiting -->
+        <div class="kanban-column" data-state="04_waiting_normal">
+          <div class="kanban-header">
+            <div class="kanban-state-dot state-dot-waiting"></div>
+            <span class="kanban-column-title">Waiting</span>
+            <span class="kanban-count">0</span>
+            <button class="kanban-collapse-btn" aria-label="Collapse column">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+          </div>
+          <div class="kanban-body">
+            <div class="kanban-empty">No tasks</div>
+          </div>
+        </div>
+
+        <!-- Done (collapsed by default) -->
+        <div class="kanban-column collapsed" data-state="1_done">
+          <div class="kanban-header">
+            <div class="kanban-state-dot state-dot-done"></div>
+            <span class="kanban-column-title">Done</span>
+            <span class="kanban-count">0</span>
+            <button class="kanban-collapse-btn" aria-label="Expand column">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+          </div>
+          <div class="kanban-body">
+            <div class="kanban-empty">No tasks</div>
+          </div>
+        </div>
+
+        <!-- Cancelled (collapsed by default) -->
+        <div class="kanban-column collapsed" data-state="1_canceled">
+          <div class="kanban-header">
+            <div class="kanban-state-dot state-dot-canceled"></div>
+            <span class="kanban-column-title">Cancelled</span>
+            <span class="kanban-count">0</span>
+            <button class="kanban-collapse-btn" aria-label="Expand column">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+          </div>
+          <div class="kanban-body">
+            <div class="kanban-empty">No tasks</div>
+          </div>
+        </div>
+
+      </div>
+      <!-- /kanban-board -->
+
+      <!-- Time Log view (hidden by default, shown when sidebar "Time Log" selected) -->
+      <div id="timelog-view" class="hidden">
+        <div class="timelog-total">
+          <span>Today's total</span>
+          <span class="timelog-total-value" id="timelog-total-value">0h 0m</span>
+        </div>
+        <div class="timelog-list" id="timelog-list">
+          <div class="kanban-empty">No time entries today</div>
+        </div>
+      </div>
+
+    </div>
+    <!-- /dashboard-main -->
+
+    <!-- ======================== DETAIL PANEL ======================== -->
+    <div id="detail-panel">
+      <div class="detail-header">
+        <span class="detail-label" style="text-transform: none; font-size: 13px; font-weight: 600;">Task Details</span>
+        <div class="detail-header-actions">
+          <button class="btn-icon" id="btn-open-odoo" aria-label="Open in Odoo" title="Open in Odoo">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+              <polyline points="15 3 21 3 21 9"/>
+              <line x1="10" y1="14" x2="21" y2="3"/>
+            </svg>
+          </button>
+          <button class="btn-icon" id="btn-close-detail" aria-label="Close panel">
+            <svg width="14" height="14" viewBox="0 0 10 10">
+              <line x1="0" y1="0" x2="10" y2="10" stroke="currentColor" stroke-width="1.2"/>
+              <line x1="10" y1="0" x2="0" y2="10" stroke="currentColor" stroke-width="1.2"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="detail-body">
+        <!-- Task Name -->
+        <div class="detail-field">
+          <label class="detail-label" for="detail-name">Name</label>
+          <input type="text" class="detail-name-input" id="detail-name" placeholder="Task name..." />
+        </div>
+
+        <!-- Project -->
+        <div class="detail-field">
+          <span class="detail-label">Project</span>
+          <div class="detail-project-badge" id="detail-project">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+            </svg>
+            <span id="detail-project-name">No project</span>
+          </div>
+        </div>
+
+        <!-- Stage -->
+        <div class="detail-field">
+          <label class="detail-label" for="detail-stage">Stage</label>
+          <select class="detail-select" id="detail-stage">
+            <option value="">Select stage...</option>
+          </select>
+        </div>
+
+        <!-- State -->
+        <div class="detail-field">
+          <label class="detail-label" for="detail-state">State</label>
+          <div class="detail-state-row">
+            <div class="kanban-state-dot" id="detail-state-dot"></div>
+            <select class="detail-select" id="detail-state" style="flex: 1;">
+              <option value="">--</option>
+              <option value="01_in_progress">In Progress</option>
+              <option value="02_changes_requested">Changes Requested</option>
+              <option value="03_approved">Approved</option>
+              <option value="04_waiting_normal">Waiting</option>
+              <option value="1_done">Done</option>
+              <option value="1_canceled">Canceled</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Priority -->
+        <div class="detail-field">
+          <span class="detail-label">Priority</span>
+          <button class="detail-priority-btn" id="detail-priority" title="Toggle priority">
+            <span class="detail-priority-star">&#9734;</span>
+            <span class="detail-priority-label">Normal</span>
+          </button>
+        </div>
+
+        <!-- Deadline -->
+        <div class="detail-field">
+          <label class="detail-label" for="detail-deadline">Deadline</label>
+          <input type="date" class="detail-date-input" id="detail-deadline" />
+        </div>
+
+        <!-- Description -->
+        <div class="detail-field">
+          <label class="detail-label" for="detail-description">Description</label>
+          <textarea class="detail-textarea" id="detail-description" placeholder="Add a description..." rows="4"></textarea>
+        </div>
+
+        <!-- Time Entries -->
+        <div class="detail-field">
+          <span class="detail-label">Time Logged</span>
+          <div class="detail-time-list" id="detail-time-entries">
+            <span class="detail-empty-text">No time entries yet</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="detail-footer">
+        <button class="btn btn-primary" id="btn-start-timer">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/>
+          </svg>
+          Start Timer
+        </button>
+        <button class="btn btn-secondary" id="btn-open-odoo-footer">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+            <polyline points="15 3 21 3 21 9"/>
+            <line x1="10" y1="14" x2="21" y2="3"/>
+          </svg>
+          Open in Odoo
+        </button>
+      </div>
+    </div>
+    <!-- /detail-panel -->
+
+  </div>
+  <!-- /dashboard-layout -->
+
+  <!-- ======================== COMMAND PALETTE ======================== -->
+  <div id="cmd-palette">
+    <div class="cmd-dialog">
+      <div class="cmd-search-wrap">
+        <svg class="cmd-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="text" id="cmd-search" placeholder="Search tasks, projects..." autocomplete="off" />
+        <span class="kbd cmd-esc">Esc</span>
+      </div>
+      <div id="cmd-results">
+        <div class="cmd-empty">Start typing to search...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================== NEW TASK MODAL ======================== -->
+  <div class="modal-backdrop" id="new-task-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <span class="modal-title">New Task</span>
+        <button class="btn-icon" id="btn-close-new-task" aria-label="Close">
+          <svg width="14" height="14" viewBox="0 0 10 10">
+            <line x1="0" y1="0" x2="10" y2="10" stroke="currentColor" stroke-width="1.2"/>
+            <line x1="10" y1="0" x2="0" y2="10" stroke="currentColor" stroke-width="1.2"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="new-task-name">Task Name</label>
+          <input type="text" class="form-input" id="new-task-name" placeholder="What needs to be done?" required />
+        </div>
+        <div class="form-group">
+          <label for="new-task-project">Project</label>
+          <select class="form-input" id="new-task-project" required>
+            <option value="">Select a project...</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="new-task-description">Description</label>
+          <textarea class="form-input" id="new-task-description" placeholder="Optional description..." rows="3" style="resize: vertical;"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btn-cancel-new-task">Cancel</button>
+        <button class="btn btn-primary" id="btn-submit-new-task">Create Task</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="dashboard.js"></script>
+</body>
+</html>

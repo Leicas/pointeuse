@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pointeuse</title>
+  <link rel="stylesheet" href="styles/main.css" />
+  <link rel="stylesheet" href="styles/themes.css" />
+  <script>
+    // Apply saved theme before first paint to prevent FOUC
+    try {
+      const t = localStorage.getItem('pointeuse-theme');
+      if (t && t !== 'dark') document.documentElement.setAttribute('data-theme', t);
+    } catch(_) {}
+  </script>
+</head>
+<body>
+  <!-- Custom Titlebar -->
+  <header class="titlebar" data-tauri-drag-region>
+    <div class="titlebar-left" data-tauri-drag-region>
+      <!-- App mini logo -->
+      <svg class="titlebar-logo" width="16" height="16" viewBox="0 0 256 256" fill="none">
+        <circle cx="128" cy="128" r="112" stroke="var(--brand)" stroke-width="16" opacity="0.4"/>
+        <path d="M128 16 A112 112 0 0 1 240 128" fill="none" stroke="var(--brand)" stroke-width="16" stroke-linecap="round"/>
+        <line x1="108" y1="72" x2="108" y2="184" stroke="var(--text-primary)" stroke-width="16" stroke-linecap="round"/>
+        <line x1="148" y1="72" x2="148" y2="184" stroke="var(--text-primary)" stroke-width="16" stroke-linecap="round"/>
+        <line x1="108" y1="128" x2="148" y2="128" stroke="var(--text-primary)" stroke-width="14" stroke-linecap="round"/>
+      </svg>
+      <span class="titlebar-title" data-tauri-drag-region>Pointeuse</span>
+      <!-- Attendance status in titlebar -->
+      <div class="attendance-indicator" id="titlebar-attendance">
+        <span class="attendance-dot" id="attendance-dot"></span>
+        <span class="attendance-text" id="attendance-text"></span>
+      </div>
+    </div>
+    <div class="titlebar-controls">
+      <button class="titlebar-btn" id="titlebar-minimize" aria-label="Minimize">
+        <svg width="10" height="1" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor"/></svg>
+      </button>
+      <button class="titlebar-btn titlebar-btn--close" id="titlebar-close" aria-label="Close">
+        <svg width="10" height="10" viewBox="0 0 10 10">
+          <line x1="0" y1="0" x2="10" y2="10" stroke="currentColor" stroke-width="1.2"/>
+          <line x1="10" y1="0" x2="0" y2="10" stroke="currentColor" stroke-width="1.2"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Toast -->
+  <div id="toast" class="toast"></div>
+
+  <!-- Task Picker Popup (shown on check-in / switch task) -->
+  <div class="task-picker-popup" id="task-picker-popup">
+    <div class="reminder-backdrop" id="task-picker-backdrop"></div>
+    <div class="task-picker-card">
+      <h3 class="task-picker-title" id="task-picker-title">What are you working on?</h3>
+      <input type="text" id="task-picker-search" class="search-input" placeholder="Search tasks..." />
+      <div class="task-picker-recents" id="task-picker-recents"></div>
+      <div class="task-picker-list scrollable" id="task-picker-list">
+        <div class="empty-state"><p>Loading tasks...</p></div>
+      </div>
+      <div class="task-picker-actions">
+        <button class="btn btn-secondary btn-sm" id="task-picker-dismiss">Skip</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reminder Popup Overlay -->
+  <div class="reminder-popup" id="reminder-popup">
+    <div class="reminder-backdrop" id="reminder-backdrop"></div>
+    <div class="reminder-card">
+      <div class="reminder-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+          <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+        </svg>
+      </div>
+      <h3 class="reminder-title" id="reminder-title">Still working on...</h3>
+      <p class="reminder-message" id="reminder-message">Your timer has been running. Are you still tracking time?</p>
+      <div class="reminder-actions">
+        <button class="btn btn-danger-outline btn-sm" id="reminder-dismiss">Stop Timer</button>
+        <button class="btn btn-primary btn-sm" id="reminder-action">Keep Going</button>
+      </div>
+      <div id="reminder-quickswitch" class="reminder-quickswitch" style="display:none"></div>
+    </div>
+  </div>
+
+  <!-- App Content -->
+  <main class="app-content">
+
+    <!-- LOGIN VIEW -->
+    <section class="view" data-view="login">
+      <div class="view-center">
+        <div class="login-brand">
+          <div class="login-logo">
+            <svg width="56" height="56" viewBox="0 0 256 256" fill="none">
+              <circle cx="128" cy="128" r="112" stroke="var(--brand)" stroke-width="14" opacity="0.3"/>
+              <path d="M128 16 A112 112 0 0 1 240 128" fill="none" stroke="var(--brand-bright)" stroke-width="14" stroke-linecap="round"/>
+              <path d="M128 16 A112 112 0 0 0 16 128" fill="none" stroke="var(--brand)" stroke-width="14" stroke-linecap="round" opacity="0.5"/>
+              <line x1="108" y1="72" x2="108" y2="184" stroke="var(--text-primary)" stroke-width="16" stroke-linecap="round"/>
+              <line x1="148" y1="72" x2="148" y2="184" stroke="var(--text-primary)" stroke-width="16" stroke-linecap="round"/>
+              <line x1="108" y1="128" x2="148" y2="128" stroke="var(--text-primary)" stroke-width="14" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <h1 class="login-title">Pointeuse</h1>
+        </div>
+        <p class="login-subtitle">Connect to your Odoo workspace</p>
+        <form id="login-form" class="login-form" autocomplete="off">
+          <div class="form-group">
+            <label for="login-url">Odoo URL</label>
+            <input type="url" id="login-url" placeholder="https://mycompany.odoo.com" required />
+          </div>
+          <input type="hidden" id="login-database" value="" />
+          <div class="form-group">
+            <label for="login-username">Username</label>
+            <input type="text" id="login-username" placeholder="user@company.com" required />
+          </div>
+          <div class="form-group">
+            <label for="login-password">Password or API Key</label>
+            <input type="password" id="login-password" placeholder="Your password or API key" required />
+          </div>
+          <div class="login-error" id="login-error"></div>
+          <button type="submit" class="btn btn-primary btn-block" id="login-submit">Connect</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- TIMER VIEW -->
+    <section class="view" data-view="timer">
+      <div class="timer-section">
+        <div class="timer-task-info">
+          <div class="timer-task-name-row">
+            <span class="timer-task-name" id="timer-task-name">No task selected</span>
+            <button class="btn-open-odoo" id="btn-open-odoo" title="Open in Odoo" style="display:none">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            </button>
+          </div>
+          <span class="timer-project-name" id="timer-project-name"></span>
+          <div class="timer-state-wrap" id="timer-state-wrap" style="display:none">
+            <div class="timer-state-row">
+              <select class="stage-select" id="timer-stage-select" title="Kanban column">
+                <option value="">Loading...</option>
+              </select>
+              <select class="stage-select state-select" id="timer-state-select" title="Task state">
+                <option value="">--</option>
+                <option value="01_in_progress">In Progress</option>
+                <option value="03_approved">Approved</option>
+                <option value="02_changes_requested">Changes Requested</option>
+                <option value="04_waiting_normal">Waiting</option>
+                <option value="1_done">Done</option>
+                <option value="1_canceled">Canceled</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Premium timer ring -->
+        <div class="timer-ring" id="timer-ring">
+          <div class="timer-ring-glow"></div>
+          <span class="timer-display" id="timer-display">00:00:00</span>
+        </div>
+
+        <div class="timer-controls">
+          <button class="btn btn-icon btn-sm" id="btn-open-dashboard" title="Open Dashboard" aria-label="Dashboard">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+            </svg>
+          </button>
+          <button class="btn btn-secondary" id="btn-select-task">Select Task</button>
+          <button class="btn btn-primary" id="btn-stop-log" style="display:none">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+            Stop &amp; Log
+          </button>
+          <button class="btn btn-secondary" id="btn-switch-task" style="display:none">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+            Switch
+          </button>
+          <button class="btn btn-danger-outline" id="btn-discard" style="display:none">Discard</button>
+        </div>
+
+        <!-- Inline log form (shown after stopping) -->
+        <div class="log-form" id="log-form" style="display:none">
+          <div class="log-form-header">
+            <span class="log-form-task" id="log-form-task"></span>
+            <span class="log-form-time" id="log-form-time"></span>
+          </div>
+          <input type="text" id="log-description" placeholder="What did you work on?" class="log-input" />
+          <div class="log-stage-wrap" id="log-stage-wrap" style="display:none">
+            <select class="stage-select" id="log-stage-select" title="Kanban column">
+              <option value="">Stage...</option>
+            </select>
+            <select class="stage-select state-select" id="log-state-select" title="Task state">
+              <option value="">State...</option>
+              <option value="01_in_progress">In Progress</option>
+              <option value="03_approved">Approved</option>
+              <option value="02_changes_requested">Changes Requested</option>
+              <option value="04_waiting_normal">Waiting</option>
+              <option value="1_done">Done</option>
+              <option value="1_canceled">Canceled</option>
+            </select>
+          </div>
+          <div class="log-form-actions">
+            <button class="btn btn-secondary btn-sm" id="btn-log-cancel">Cancel</button>
+            <button class="btn btn-primary btn-sm" id="btn-log-submit">Log Time</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Switch buttons (one-tap task switching) -->
+      <div class="quick-switch-bar" id="quick-switch-bar" style="display:none">
+        <div class="qs-bar-header">
+          <span class="qs-bar-title">Quick Switch</span>
+          <button class="qs-bar-more" id="btn-qs-all" title="All tasks">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+          </button>
+        </div>
+        <div class="qs-bar-main" id="qs-bar-main"></div>
+        <div class="qs-bar-pills" id="qs-bar-pills"></div>
+      </div>
+
+      <!-- Attendance toggle -->
+      <div class="attendance-toggle-container">
+        <button class="attendance-toggle-btn" id="btn-attendance-toggle">
+          <span class="att-dot"></span>
+          <span id="attendance-toggle-text">Check In</span>
+        </button>
+      </div>
+
+      <div class="today-summary">
+        <span class="today-label">Today</span>
+        <span class="today-value" id="today-total">0h 0m</span>
+      </div>
+
+      <!-- Wide-mode only: today's time breakdown chart -->
+      <div class="timer-breakdown" id="timer-breakdown"></div>
+
+      <div class="today-quick-tasks" id="today-quick-tasks"></div>
+
+      <nav class="bottom-nav">
+        <button class="nav-btn active" data-nav="timer">
+          <span class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+            </svg>
+          </span>
+          <span>Timer</span>
+        </button>
+        <button class="nav-btn" data-nav="tasks">
+          <span class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+            </svg>
+          </span>
+          <span>Tasks</span>
+        </button>
+        <button class="nav-btn" data-nav="history">
+          <span class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/>
+            </svg>
+          </span>
+          <span>History</span>
+        </button>
+        <button class="nav-btn" data-nav="settings">
+          <span class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+            </svg>
+          </span>
+          <span>Settings</span>
+        </button>
+      </nav>
+    </section>
+
+    <!-- TASKS VIEW -->
+    <section class="view" data-view="tasks">
+      <div class="view-header">
+        <h2 class="view-title">Tasks</h2>
+        <div class="view-header-actions">
+          <button class="btn btn-icon btn-sm" id="btn-toggle-kanban" aria-label="Toggle board view" title="Board view" style="display:none">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="5" height="18" rx="1"/><rect x="10" y="3" width="5" height="12" rx="1"/><rect x="17" y="3" width="5" height="15" rx="1"/></svg>
+          </button>
+          <button class="btn btn-primary btn-sm" id="btn-new-task">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            New
+          </button>
+        </div>
+      </div>
+
+      <div class="search-bar">
+        <input type="text" id="task-search" class="search-input" placeholder="Search tasks... (Ctrl+K)" />
+      </div>
+
+      <div class="filter-chips" id="filter-chips" style="display:none"></div>
+
+      <div class="tab-bar">
+        <button class="tab active" data-tab="recent">Recent</button>
+        <button class="tab" data-tab="my-tasks">My Tasks</button>
+        <button class="tab" data-tab="search">Search</button>
+      </div>
+
+      <div class="task-list scrollable" id="task-list">
+        <div class="empty-state"><p>No tasks found</p></div>
+      </div>
+
+      <div class="task-kanban scrollable" id="task-kanban" style="display:none"></div>
+
+      <nav class="bottom-nav">
+        <button class="nav-btn" data-nav="timer">
+          <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
+          <span>Timer</span>
+        </button>
+        <button class="nav-btn active" data-nav="tasks">
+          <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span>
+          <span>Tasks</span>
+        </button>
+        <button class="nav-btn" data-nav="history">
+          <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg></span>
+          <span>History</span>
+        </button>
+        <button class="nav-btn" data-nav="settings">
+          <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg></span>
+          <span>Settings</span>
+        </button>
+      </nav>
+    </section>
+
+    <!-- TASK CREATE VIEW -->
+    <section class="view" data-view="task-create">
+      <div class="view-header">
+        <button class="btn btn-icon" id="btn-back-from-create" aria-label="Back">
+          <svg width="18" height="18" viewBox="0 0 18 18"><polyline points="11,3 5,9 11,15" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <h2 class="view-title">New Task</h2>
+        <div class="spacer"></div>
+      </div>
+
+      <form id="task-create-form" class="form-body scrollable">
+        <div class="form-group">
+          <label for="new-task-name">Task Name</label>
+          <input type="text" id="new-task-name" placeholder="What needs to be done?" required />
+        </div>
+        <div class="form-group">
+          <label for="new-task-project">Project</label>
+          <select id="new-task-project" class="select-input" required>
+            <option value="">Select a project...</option>
+          </select>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" id="btn-cancel-create">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create &amp; Start</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- HISTORY VIEW -->
+    <section class="view" data-view="history">
+      <div class="history-date-nav">
+        <button class="btn btn-icon" id="btn-history-prev" aria-label="Previous day">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <div class="history-date-center" id="btn-history-toggle-month">
+          <span class="history-date-label" id="history-date-label">Today's Log</span>
+          <span class="history-date-sub" id="history-date-sub"></span>
+        </div>
+        <button class="btn btn-icon" id="btn-history-next" aria-label="Next day">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>
+
+      <div class="today-summary history-total">
+        <span class="today-label">Total Logged</span>
+        <span class="today-value" id="history-total">0h 0m</span>
+        <div class="sync-indicator">
+          <span class="sync-badge" id="sync-badge" style="display:none">0</span>
+          <button class="btn btn-sm btn-secondary" id="btn-sync">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            Sync
+          </button>
+        </div>
+      </div>
+
+      <div class="weekly-chart" id="weekly-chart" style="display:none"></div>
+
+      <!-- Monthly summary view (toggled) -->
+      <div class="month-view" id="month-view" style="display:none">
+        <div class="month-header">
+          <button class="btn btn-icon" id="btn-month-prev" aria-label="Previous month">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <span class="month-title" id="month-title"></span>
+          <button class="btn btn-icon" id="btn-month-next" aria-label="Next month">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+        </div>
+        <div class="month-total" id="month-total"></div>
+        <div class="month-days scrollable" id="month-days"></div>
+        <button class="btn btn-text" id="btn-back-to-day">Back to day view</button>
+      </div>
+
+      <div class="history-list scrollable" id="history-list">
+        <div class="empty-state"><p>No time entries today</p></div>
+      </div>
+
+      <!-- Day Analysis Panel -->
+      <div class="analysis-panel" id="analysis-panel" style="display:none">
+        <div class="analysis-header">
+          <h4 class="analysis-title">Day Analysis</h4>
+          <button class="btn btn-icon" id="btn-close-analysis" aria-label="Close">
+            <svg width="14" height="14" viewBox="0 0 10 10"><line x1="0" y1="0" x2="10" y2="10" stroke="currentColor" stroke-width="1.2"/><line x1="10" y1="0" x2="0" y2="10" stroke="currentColor" stroke-width="1.2"/></svg>
+          </button>
+        </div>
+        <div class="analysis-stats">
+          <div class="analysis-stat">
+            <span class="analysis-stat-label">Presence</span>
+            <span class="analysis-stat-value" id="analysis-presence">0h</span>
+          </div>
+          <div class="analysis-stat">
+            <span class="analysis-stat-label">Logged</span>
+            <span class="analysis-stat-value" id="analysis-logged">0h</span>
+          </div>
+          <div class="analysis-stat">
+            <span class="analysis-stat-label">Gap</span>
+            <span class="analysis-stat-value" id="analysis-gap">0h</span>
+          </div>
+        </div>
+        <div class="analysis-suggestions" id="analysis-suggestions"></div>
+      </div>
+
+      <div class="analysis-trigger">
+        <button class="btn btn-secondary btn-sm" id="btn-analyze-day">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M21 3v6h-6"/></svg>
+          Analyze Day
+        </button>
+      </div>
+
+      <nav class="bottom-nav">
+        <button class="nav-btn" data-nav="timer">
+          <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
+          <span>Timer</span>
+        </button>
+        <button class="nav-btn" data-nav="tasks">
+          <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span>
+          <span>Tasks</span>
+        </button>
+        <button class="nav-btn active" data-nav="history">
+          <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg></span>
+          <span>History</span>
+        </button>
+        <button class="nav-btn" data-nav="settings">
+          <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg></span>
+          <span>Settings</span>
+        </button>
+      </nav>
+    </section>
+
+    <!-- SETTINGS VIEW -->
+    <section class="view" data-view="settings">
+      <div class="view-header">
+        <h2 class="view-title">Settings</h2>
+        <div class="spacer"></div>
+      </div>
+
+      <div class="settings-body scrollable">
+        <div class="settings-section">
+          <h4 class="settings-heading">Connection</h4>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-label" id="settings-url">Not connected</span>
+              <span class="setting-desc" id="settings-username"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h4 class="settings-heading">Reminders</h4>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-label">Reminder Interval</span>
+              <span class="setting-desc">Get nudged if timer runs too long</span>
+            </div>
+            <select class="settings-select" id="setting-reminder-interval">
+              <option value="0">Off</option>
+              <option value="5">5 min</option>
+              <option value="10">10 min</option>
+              <option value="15">15 min</option>
+              <option value="30" selected>30 min</option>
+              <option value="60">1 hour</option>
+              <option value="90">1.5 hours</option>
+              <option value="120">2 hours</option>
+              <option value="180">3 hours</option>
+              <option value="240">4 hours</option>
+            </select>
+          </div>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-label">Test Popup</span>
+              <span class="setting-desc">Preview the reminder</span>
+            </div>
+            <button class="btn btn-secondary btn-sm" id="btn-test-popup">Test</button>
+          </div>
+          <div class="setting-row" id="setting-notif-channel-row" style="display:none">
+            <div class="setting-info">
+              <span class="setting-label">Notification Style</span>
+              <span class="setting-desc">Sound and vibration level</span>
+            </div>
+            <select class="settings-select" id="setting-reminder-channel">
+              <option value="reminder_silent_v2">Silent</option>
+              <option value="reminder_normal_v2">Sound</option>
+              <option value="reminder_urgent_v2" selected>Sound + Vibration</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h4 class="settings-heading">Quick Switch</h4>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-label">Population mode</span>
+              <span class="setting-desc">How quick-switch items are chosen</span>
+            </div>
+            <select class="settings-select" id="setting-quickswitch-mode">
+              <option value="auto" selected>Auto</option>
+              <option value="manual">Manual</option>
+            </select>
+          </div>
+          <div id="quickswitch-manual-config" style="display:none">
+            <div class="setting-row" style="flex-direction:column;align-items:stretch;gap:8px">
+              <div class="setting-info">
+                <span class="setting-label">Pinned tasks</span>
+                <span class="setting-desc">Pick tasks for the reminder popup quick-switch</span>
+              </div>
+              <div id="quickswitch-pinned-list" class="quickswitch-pinned-list"></div>
+              <button class="btn btn-secondary btn-sm" id="btn-add-quickswitch">+ Add task</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h4 class="settings-heading">Task List</h4>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-label">Hide done tasks</span>
+              <span class="setting-desc">Filter out done and canceled tasks</span>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="setting-hide-done" checked />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h4 class="settings-heading">Default Task</h4>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-label">Private / fallback task</span>
+              <span class="setting-desc">Used for untracked time (e.g. private todos)</span>
+            </div>
+          </div>
+          <div id="default-task-config" style="padding:0 4px">
+            <div id="default-task-current" style="display:none;margin-bottom:6px">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span id="default-task-name" style="font-size:12px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+                <button class="btn btn-sm btn-secondary" id="btn-clear-default-task" title="Remove default task" style="padding:2px 8px;font-size:10px">&times;</button>
+              </div>
+              <span id="default-task-project" style="font-size:10px;color:var(--text-muted)"></span>
+            </div>
+            <button class="btn btn-sm btn-secondary" id="btn-set-default-task" style="width:100%;font-size:11px">Choose a task...</button>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h4 class="settings-heading">Appearance</h4>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-label">Theme</span>
+              <span class="setting-desc">Choose a color scheme</span>
+            </div>
+            <select class="settings-select" id="setting-theme">
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+              <option value="colorblind">Colorblind-friendly</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h4 class="settings-heading">Startup</h4>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-label">Launch at login</span>
+              <span class="setting-desc">Start Pointeuse when you log in</span>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="setting-autostart" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+
+
+        <div class="settings-section">
+          <h4 class="settings-heading">Updates</h4>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-label">App version</span>
+              <span class="setting-desc" id="update-status">Check for new versions</span>
+            </div>
+            <button class="btn btn-sm btn-secondary" id="btn-check-update">Check for update</button>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h4 class="settings-heading">Account</h4>
+          <button class="btn btn-danger btn-block" id="btn-disconnect">Disconnect</button>
+        </div>
+
+        <p class="app-version">Pointeuse v0.1.0</p>
+      </div>
+
+      <nav class="bottom-nav">
+        <button class="nav-btn" data-nav="timer">
+          <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
+          <span>Timer</span>
+        </button>
+        <button class="nav-btn" data-nav="tasks">
+          <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span>
+          <span>Tasks</span>
+        </button>
+        <button class="nav-btn" data-nav="history">
+          <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg></span>
+          <span>History</span>
+        </button>
+        <button class="nav-btn active" data-nav="settings">
+          <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg></span>
+          <span>Settings</span>
+        </button>
+      </nav>
+    </section>
+
+  </main>
+
+  <!-- Command Palette -->
+  <div class="command-palette" id="command-palette" style="display:none">
+    <div class="command-backdrop" id="command-backdrop"></div>
+    <div class="command-dialog">
+      <input type="text" id="command-search" class="command-search-input" placeholder="Search tasks... (Ctrl+K)" autocomplete="off" />
+      <div class="command-results scrollable" id="command-results">
+        <div class="empty-state"><p>Type to search tasks</p></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>

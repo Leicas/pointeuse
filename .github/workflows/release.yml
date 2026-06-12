@@ -1,0 +1,427 @@
+name: Release
+
+on:
+  push:
+    branches: [main, beta]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1) Decide next version from conventional commits, bump the three version
+  #    files (package.json, src-tauri/Cargo.toml, src-tauri/tauri.conf.json),
+  #    push the bump commit, create the git tag, and publish a GitHub release
+  #    with auto-generated notes. Outputs feed the build matrix below.
+  # ---------------------------------------------------------------------------
+  release:
+    name: Semantic-release
+    runs-on: ubuntu-22.04
+    outputs:
+      published: ${{ steps.semantic.outputs.new_release_published }}
+      version:   ${{ steps.semantic.outputs.new_release_version }}
+      tag:       ${{ steps.semantic.outputs.new_release_git_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm ci
+
+      - name: Run semantic-release
+        id: semantic
+        uses: cycjimmy/semantic-release-action@v4
+        with:
+          extra_plugins: |
+            @semantic-release/changelog@6
+            @semantic-release/exec@6
+            @semantic-release/git@10
+            conventional-changelog-conventionalcommits@8
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ---------------------------------------------------------------------------
+  # 2) Build desktop artifacts on the just-tagged commit and upload them to
+  #    the release that step (1) created. Skipped when no release was cut.
+  # ---------------------------------------------------------------------------
+  build-desktop:
+    name: Build & upload (${{ matrix.os }})
+    needs: release
+    if: needs.release.outputs.published == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            args: ''
+          - os: macos-latest
+            args: '--target universal-apple-darwin'
+          - os: windows-latest
+            args: ''
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Linux build deps
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev
+
+      - name: Add macOS universal targets
+        if: matrix.os == 'macos-latest'
+        run: |
+          rustup target add aarch64-apple-darwin
+          rustup target add x86_64-apple-darwin
+
+      - run: npm ci
+
+      - name: Build & upload to release ${{ needs.release.outputs.tag }}
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ needs.release.outputs.tag }}
+          releaseName: ${{ needs.release.outputs.tag }}
+          args: ${{ matrix.args }}
+          # tauri-action handles updater JSON aggregation across the matrix:
+          # signs each artifact with the private key, uploads the .sig file
+          # alongside the installer, and emits a single merged latest.json
+          # at the end. updaterJsonPreferNsis points it at our setup.exe
+          # rather than .msi for the Windows entry.
+          uploadUpdaterJson: true
+          updaterJsonPreferNsis: true
+
+  # ---------------------------------------------------------------------------
+  # 2.5) Patch `latest.json.notes` from CHANGELOG.md so the in-app update
+  # dialog shows release notes instead of "No release notes available."
+  # Skips silently if latest.json is absent or no CHANGELOG section exists.
+  # ---------------------------------------------------------------------------
+  patch-updater-notes:
+    name: Patch latest.json notes from CHANGELOG
+    needs: [release, build-desktop]
+    if: needs.release.outputs.published == 'true'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+      - name: Download, patch, re-upload latest.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release.outputs.tag }}
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          if ! gh release download "$TAG" -p latest.json -D out --clobber 2>/dev/null; then
+            echo "::warning::latest.json not on $TAG (signing keys probably not configured); skipping"
+            exit 0
+          fi
+          if [ ! -f out/latest.json ]; then
+            echo "::warning::latest.json downloaded zero files; skipping"
+            exit 0
+          fi
+          # Extract the CHANGELOG section for $VERSION (text under the
+          # `# [$VERSION](...)` or `## [$VERSION](...)` heading, up to the
+          # next same-level heading or EOF).
+          NOTES=$(node -e '
+            const fs = require("fs");
+            const md = fs.readFileSync("CHANGELOG.md","utf8");
+            const v = process.argv[1].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            const re = new RegExp("(^|\\n)#{1,2} \\[" + v + "\\][^\\n]*\\n([\\s\\S]*?)(?=\\n#{1,2} |$)");
+            const m = md.match(re);
+            process.stdout.write(m ? m[2].trim() : "");
+          ' "$VERSION")
+          if [ -z "$NOTES" ]; then
+            echo "::warning::No CHANGELOG section for $VERSION — leaving notes blank"
+            exit 0
+          fi
+          node -e '
+            const fs = require("fs");
+            const m = JSON.parse(fs.readFileSync("out/latest.json","utf8"));
+            m.notes = process.argv[1];
+            fs.writeFileSync("out/latest.json", JSON.stringify(m,null,2) + "\n");
+          ' "$NOTES"
+          gh release upload "$TAG" out/latest.json --clobber
+          echo "Patched latest.json.notes for $TAG (${#NOTES} chars)"
+
+  # ---------------------------------------------------------------------------
+  # 3) Android signed APK + AAB. Skipped automatically when the keystore
+  #    secret is unset, so the workflow keeps shipping desktop builds even
+  #    without the Android signing setup.
+  #
+  #    Required repo secrets (Settings → Secrets and variables → Actions):
+  #      ANDROID_KEYSTORE_BASE64   — base64 of the upload keystore (.jks)
+  #      ANDROID_KEYSTORE_ALIAS    — key alias
+  #      ANDROID_KEYSTORE_PASSWORD — store password
+  #      ANDROID_KEY_PASSWORD      — key password (often same as store)
+  # ---------------------------------------------------------------------------
+  build-android:
+    name: Build & upload Android (APK + AAB)
+    needs: release
+    if: needs.release.outputs.published == 'true'
+    runs-on: ubuntu-22.04
+    env:
+      HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+    steps:
+      - name: Skip if Android signing not configured
+        if: env.HAS_KEYSTORE != 'true'
+        run: |
+          echo "::warning::ANDROID_KEYSTORE_BASE64 not set — Android release build skipped."
+          echo "See the comment block at the top of this job in release.yml for the secret list."
+
+      - if: env.HAS_KEYSTORE == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+
+      - if: env.HAS_KEYSTORE == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - if: env.HAS_KEYSTORE == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - if: env.HAS_KEYSTORE == 'true'
+        uses: android-actions/setup-android@v3
+
+      - name: Cache Android NDK
+        if: env.HAS_KEYSTORE == 'true'
+        id: ndk-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
+          key: ndk-26.1.10909125-${{ runner.os }}
+
+      - name: Install Android NDK
+        if: env.HAS_KEYSTORE == 'true' && steps.ndk-cache.outputs.cache-hit != 'true'
+        run: sdkmanager --install "ndk;26.1.10909125" >/dev/null
+
+      - if: env.HAS_KEYSTORE == 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - if: env.HAS_KEYSTORE == 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: android-release
+
+      - if: env.HAS_KEYSTORE == 'true'
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+          gradle-home-cache-includes: |
+            caches
+            notifications
+            wrapper
+
+      - name: Decode signing keystore
+        if: env.HAS_KEYSTORE == 'true'
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          mkdir -p "$HOME/keystores"
+          echo "$KEYSTORE_B64" | base64 -d > "$HOME/keystores/release.jks"
+          if [ ! -s "$HOME/keystores/release.jks" ]; then
+            echo "::error::keystore decoded to empty file — is ANDROID_KEYSTORE_BASE64 valid base64?"
+            exit 1
+          fi
+
+      - if: env.HAS_KEYSTORE == 'true'
+        run: npm ci
+
+      # gen/android/ is gitignored — regenerate fresh on each CI run rather
+      # than checking the Gradle scaffolding into the repo. Do NOT pre-create
+      # gen/android/ before this step; `tauri android init` aborts when the
+      # directory already exists.
+      - name: Generate gen/android/ project
+        if: env.HAS_KEYSTORE == 'true'
+        run: npx tauri android init
+        env:
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
+
+      # `tauri android init` scaffolds a default manifest + MainActivity.
+      # Pointeuse needs its hand-written Android pieces on top: notification
+      # permissions, schedule-task receivers, the WorkManager override, and
+      # the custom MainActivity/WorkerFactory. The patch script overlays them
+      # from src-tauri/android-overlay/ — idempotent.
+      - name: Apply Android post-init overlay (manifest + Kotlin)
+        if: env.HAS_KEYSTORE == 'true'
+        run: node scripts/patch-android-gen.mjs
+
+      # `tauri android init` scaffolds gen/android/ with the DEFAULT Tauri
+      # bird icons in mipmap-*/ — regenerate every platform's icon set from
+      # the source PNG so the APK/AAB ship with the Pointeuse icon.
+      - name: Regenerate icons from app-icon.png
+        if: env.HAS_KEYSTORE == 'true'
+        run: npx tauri icon app-icon.png
+
+      - name: Write key.properties (post-init)
+        if: env.HAS_KEYSTORE == 'true'
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEYSTORE_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          {
+            echo "storeFile=$HOME/keystores/release.jks"
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > src-tauri/gen/android/key.properties
+
+      - name: Build signed APK + AAB
+        if: env.HAS_KEYSTORE == 'true'
+        env:
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
+          # ring needs the NDK clang to detect compiler family; point each
+          # cross-target's CC/AR/linker at the NDK toolchain so cargo links
+          # the .so for every ABI cleanly.
+          CC_aarch64_linux_android: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang
+          AR_aarch64_linux_android: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
+          CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang
+          CC_armv7_linux_androideabi: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi26-clang
+          AR_armv7_linux_androideabi: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
+          CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi26-clang
+          CC_i686_linux_android: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/i686-linux-android26-clang
+          AR_i686_linux_android: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
+          CARGO_TARGET_I686_LINUX_ANDROID_LINKER: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/i686-linux-android26-clang
+          CC_x86_64_linux_android: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android26-clang
+          AR_x86_64_linux_android: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
+          CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android26-clang
+        run: npm run android:build
+
+      # Tauri 2.10/2.11 emits the universal APK as
+      # `app-universal-release-unsigned.apk` even when key.properties is in
+      # place — the merged-ABI APK bypasses gradle's signingConfig. Sign it
+      # explicitly with apksigner so the upload step finds a signed APK.
+      - name: Sign universal APK if gradle skipped it
+        if: env.HAS_KEYSTORE == 'true'
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEYSTORE_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          APK_DIR=src-tauri/gen/android/app/build/outputs/apk/universal/release
+          UNSIGNED="$APK_DIR/app-universal-release-unsigned.apk"
+          SIGNED="$APK_DIR/app-universal-release.apk"
+          if [ -f "$SIGNED" ]; then
+            echo "Universal APK already signed by gradle: $SIGNED"
+            exit 0
+          fi
+          if [ ! -f "$UNSIGNED" ]; then
+            echo "::error::neither $SIGNED nor $UNSIGNED exists; check the build step"
+            ls -la "$APK_DIR" || true
+            exit 1
+          fi
+          APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -n 1)
+          ZIPALIGN=$(ls -d "$ANDROID_HOME"/build-tools/*/zipalign 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$APKSIGNER" ] || [ -z "$ZIPALIGN" ]; then
+            echo "::error::apksigner/zipalign not found under $ANDROID_HOME/build-tools/"
+            ls -d "$ANDROID_HOME"/build-tools/* || true
+            exit 1
+          fi
+          ALIGNED="$APK_DIR/app-universal-release-aligned.apk"
+          "$ZIPALIGN" -p -f 4 "$UNSIGNED" "$ALIGNED"
+          "$APKSIGNER" sign \
+            --ks "$HOME/keystores/release.jks" \
+            --ks-pass "pass:$KEYSTORE_PASSWORD" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --key-pass "pass:$KEY_PASSWORD" \
+            --out "$SIGNED" \
+            "$ALIGNED"
+          "$APKSIGNER" verify --verbose "$SIGNED"
+
+      # AABs use JAR signing (v1) — Play Store re-signs with its own
+      # deployment cert when distributing, so the upload only needs to be
+      # signed by the upload key. Gradle's release task does NOT do this for
+      # Tauri-generated projects, so sign with jarsigner unconditionally.
+      - name: Sign AAB with jarsigner
+        if: env.HAS_KEYSTORE == 'true'
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEYSTORE_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          AAB=src-tauri/gen/android/app/build/outputs/bundle/universalRelease/app-universal-release.aab
+          if [ ! -f "$AAB" ]; then
+            echo "::error::AAB not found at $AAB"
+            ls -la "$(dirname "$AAB")" || true
+            exit 1
+          fi
+          jarsigner \
+            -sigalg SHA256withRSA \
+            -digestalg SHA-256 \
+            -keystore "$HOME/keystores/release.jks" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -keypass "$KEY_PASSWORD" \
+            "$AAB" "$KEY_ALIAS"
+          # `-strict` intentionally NOT set: Play Store accepts self-signed
+          # upload keys, but `-strict` exits 4 on them.
+          jarsigner -verify "$AAB"
+          echo "AAB signed and verified: $AAB"
+
+      - name: Upload APK + AAB to ${{ needs.release.outputs.tag }}
+        if: env.HAS_KEYSTORE == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release.outputs.tag }}
+        run: |
+          APK=src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
+          AAB=src-tauri/gen/android/app/build/outputs/bundle/universalRelease/app-universal-release.aab
+          cp "$APK" "pointeuse-${TAG}-android-universal.apk"
+          cp "$AAB" "pointeuse-${TAG}-android-universal.aab"
+          gh release upload "$TAG" \
+            "pointeuse-${TAG}-android-universal.apk" \
+            "pointeuse-${TAG}-android-universal.aab" \
+            --clobber
+
+      - name: Always wipe key.properties + decoded keystore
+        if: always() && env.HAS_KEYSTORE == 'true'
+        run: |
+          rm -f src-tauri/gen/android/key.properties || true
+          rm -f "$HOME/keystores/release.jks" || true

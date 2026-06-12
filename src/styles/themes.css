@@ -1,0 +1,605 @@
+/* ==========================================================
+   Pointeuse — Theme Overrides
+   Provides: improved dark (default), light, colorblind-safe
+   Load AFTER main.css
+   ========================================================== */
+
+/* ==========================================================
+   1. IMPROVED DARK THEME (default)
+   Fixes WCAG AA contrast issues in the original dark palette.
+   Applied at :root so it takes effect without any data-theme.
+   ========================================================== */
+
+/* NOTE: The :root contrast fixes are applied directly in main.css.
+   This section documents the rationale:
+   --text-muted:     #555c72 -> #7a8194  (ratio ~5.0:1 vs --base #0c0f1a)
+   --text-secondary: #8b92a8 -> #9ba2b8  (ratio ~6.2:1 vs --base)
+   --brand-bright:   #60a5fa -> #7ab8ff  (ratio ~7.0:1 vs --base, better timer digit contrast)
+*/
+
+
+/* ==========================================================
+   2. LIGHT THEME
+   Warm grays, subtle blue tints, professional daytime palette.
+   Activated via: <html data-theme="light">
+   ========================================================== */
+
+[data-theme="light"] {
+  /* Brand palette — slightly deeper for light backgrounds */
+  --brand:          #2563eb;
+  --brand-bright:   #1d4ed8;
+  --brand-deep:     #1e40af;
+  --brand-dim:      rgba(37, 99, 235, 0.06);
+  --brand-glow:     rgba(37, 99, 235, 0.12);
+
+  /* Surfaces — distinct layers with warm gray base */
+  --base:           #edeef3;
+  --surface:        #ffffff;
+  --surface-elevated: #f7f8fb;
+  --surface-hover:  #f0f1f6;
+  --bg-input:       #f7f8fb;
+
+  /* Text — dark slate for warmth, high contrast */
+  --text-primary:   #1a1d2e;
+  --text-secondary: #4b5068;
+  --text-muted:     #6b7190;
+
+  /* Borders — visible and defined */
+  --border:         #c8cdd8;
+  --border-subtle:  rgba(200, 205, 216, 0.6);
+  --border-focus:   var(--brand);
+
+  /* Status — same hues, tuned for light backgrounds */
+  --danger:         #dc2626;
+  --danger-hover:   #b91c1c;
+  --success:        #16a34a;
+  --success-dim:    rgba(22, 163, 74, 0.10);
+  --warning:        #d97706;
+
+  /* Premium accents — light variants */
+  --brand-gradient:  linear-gradient(135deg, #1e40af 0%, #2563eb 50%, #6366f1 100%);
+  --glass-bg:        rgba(255, 255, 255, 0.7);
+  --glass-border:    rgba(200, 205, 216, 0.5);
+
+  /* Shadows — more prominent for depth */
+  --shadow-sm:       0 1px 2px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04);
+  --shadow-md:       0 2px 8px rgba(0, 0, 0, 0.08), 0 4px 16px rgba(0, 0, 0, 0.04);
+  --shadow-lg:       0 4px 16px rgba(0, 0, 0, 0.10), 0 8px 32px rgba(0, 0, 0, 0.06);
+  --shadow-glow:     0 0 20px var(--brand-glow);
+  --shadow-glow-lg:  0 0 40px var(--brand-glow);
+}
+
+/* --- Light: Ambient glow — softer, single gradient for light bg --- */
+[data-theme="light"] body::before {
+  background: radial-gradient(ellipse 80% 50% at 50% -5%, rgba(37, 99, 235, 0.04) 0%, transparent 60%);
+}
+
+/* --- Light: Noise texture — even subtler on light --- */
+[data-theme="light"] body::after {
+  opacity: 0.15;
+}
+
+/* --- Light: Glass cards use white glass --- */
+[data-theme="light"] .qs-bar-item {
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(200, 205, 216, 0.5);
+  backdrop-filter: blur(8px);
+}
+[data-theme="light"] .qs-bar-item:hover {
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(37, 99, 235, 0.1);
+}
+
+/* --- Light: Timer ring glow --- */
+[data-theme="light"] .timer-ring-glow {
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.06) 0%, transparent 70%);
+}
+[data-theme="light"] .timer-ring.running .timer-ring-glow {
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.08) 0%, rgba(37, 99, 235, 0.02) 40%, transparent 70%);
+}
+
+/* --- Light: Timer digits — darker brand for contrast --- */
+[data-theme="light"] .timer-ring.running .timer-display {
+  color: var(--brand);
+  text-shadow: 0 0 20px rgba(37, 99, 235, 0.20), 0 0 40px rgba(37, 99, 235, 0.08);
+}
+
+/* --- Light: Today summary glass --- */
+[data-theme="light"] .today-summary {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(8px);
+}
+[data-theme="light"] .today-summary::before {
+  background: linear-gradient(180deg, var(--brand), #6366f1);
+  opacity: 0.4;
+}
+
+/* --- Light: Nav bar solid with shadow --- */
+[data-theme="light"] .bottom-nav {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.06);
+  border-top-color: rgba(200, 205, 216, 0.5);
+}
+[data-theme="light"] .nav-btn.active::before {
+  box-shadow: 0 0 8px rgba(37, 99, 235, 0.3), 0 0 16px rgba(37, 99, 235, 0.12);
+}
+
+/* --- Light: Two-column divider uses dark gradient on light bg --- */
+[data-theme="light"] [data-view="timer"].view.active > .timer-section::after {
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(0, 0, 0, 0.06) 20%,
+    rgba(0, 0, 0, 0.10) 50%,
+    rgba(0, 0, 0, 0.06) 80%,
+    transparent 100%
+  );
+}
+
+/* --- Light: Left column ambient glow — warmer --- */
+[data-theme="light"] [data-view="timer"].view.active > .timer-section::before {
+  background: radial-gradient(ellipse 80% 60% at 50% 45%, rgba(37, 99, 235, 0.03) 0%, transparent 70%);
+}
+
+/* --- Light: Bottom fade gradient uses light base --- */
+[data-theme="light"] [data-view="timer"].view.active::after {
+  background: linear-gradient(to top, rgba(237, 238, 243, 0.6) 0%, transparent 100%);
+}
+
+/* --- Light: Primary button --- */
+[data-theme="light"] .btn-primary {
+  background: linear-gradient(135deg, #1e40af, #2563eb 50%, #6366f1);
+}
+[data-theme="light"] .btn-primary:hover {
+  background: linear-gradient(135deg, #2563eb, #3b82f6 50%, #818cf8);
+  box-shadow: 0 4px 20px rgba(37, 99, 235, 0.25), 0 0 40px rgba(37, 99, 235, 0.08);
+}
+
+/* --- Light: Custom scrollbar --- */
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: rgba(75, 80, 104, 0.18);
+}
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(75, 80, 104, 0.32);
+}
+
+/* --- Light: Selection --- */
+[data-theme="light"] ::selection {
+  background: rgba(37, 99, 235, 0.2);
+}
+
+/* --- Light: Titlebar — solid with subtle shadow --- */
+[data-theme="light"] .titlebar {
+  background: rgba(255, 255, 255, 0.88);
+  border-bottom-color: rgba(200, 205, 216, 0.6);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+/* --- Light: Titlebar button hover --- */
+[data-theme="light"] .titlebar-btn:hover {
+  background: rgba(75, 80, 104, 0.08);
+}
+
+/* --- Light: Bottom nav --- */
+[data-theme="light"] .bottom-nav {
+  background: rgba(255, 255, 255, 0.88);
+}
+
+/* --- Light: Toast glass effect --- */
+[data-theme="light"] .toast {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: var(--border);
+  color: var(--text-primary);
+}
+[data-theme="light"] .toast-error {
+  border-color: rgba(220, 38, 38, 0.3);
+  color: var(--danger);
+}
+[data-theme="light"] .toast-success {
+  border-color: rgba(22, 163, 74, 0.3);
+  color: var(--success);
+}
+
+/* --- Light: Reminder popup --- */
+[data-theme="light"] .reminder-backdrop {
+  background: rgba(245, 246, 250, 0.6);
+}
+[data-theme="light"] .reminder-card {
+  background: rgba(255, 255, 255, 0.96);
+}
+
+/* --- Light: Task picker popup --- */
+[data-theme="light"] .task-picker-card {
+  background: rgba(255, 255, 255, 0.96);
+}
+
+/* --- Light: Command palette --- */
+[data-theme="light"] .command-backdrop {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* --- Light: Update modal overlay --- */
+[data-theme="light"] .update-modal-overlay {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* --- Light: Input inner shadows (lighter) --- */
+[data-theme="light"] input[type="text"],
+[data-theme="light"] input[type="email"],
+[data-theme="light"] input[type="url"],
+[data-theme="light"] input[type="password"],
+[data-theme="light"] input[type="number"],
+[data-theme="light"] select,
+[data-theme="light"] .select-input {
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="light"] input:focus,
+[data-theme="light"] select:focus,
+[data-theme="light"] .select-input:focus {
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04), 0 0 0 3px rgba(37, 99, 235, 0.12), 0 0 12px rgba(37, 99, 235, 0.06);
+}
+
+/* --- Light: Input borders need to be visible --- */
+[data-theme="light"] input[type="text"],
+[data-theme="light"] input[type="email"],
+[data-theme="light"] input[type="url"],
+[data-theme="light"] input[type="password"],
+[data-theme="light"] input[type="number"],
+[data-theme="light"] select,
+[data-theme="light"] .select-input {
+  border-color: #c0c5d2;
+}
+
+/* --- Light: Search input --- */
+[data-theme="light"] .search-input {
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+  border-color: #c0c5d2;
+}
+[data-theme="light"] .search-input:focus {
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.03), 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+/* --- Light: Log input --- */
+[data-theme="light"] .log-input {
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+[data-theme="light"] .log-input:focus {
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.03), 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+/* --- Light: Timer ring tracks --- */
+[data-theme="light"] .timer-ring::before {
+  background: conic-gradient(
+    from 0deg,
+    rgba(37, 99, 235, 0.10) 0%,
+    rgba(37, 99, 235, 0.04) 100%
+  );
+}
+[data-theme="light"] .timer-ring.running::before {
+  background: conic-gradient(
+    from 0deg,
+    var(--brand) 0%,
+    var(--brand-bright) 15%,
+    rgba(37, 99, 235, 0.18) 35%,
+    rgba(37, 99, 235, 0.06) 50%,
+    rgba(37, 99, 235, 0.18) 65%,
+    var(--brand-bright) 85%,
+    var(--brand) 100%
+  );
+}
+[data-theme="light"] .timer-ring.running::after {
+  border-color: rgba(37, 99, 235, 0.12);
+  box-shadow: inset 0 0 40px rgba(37, 99, 235, 0.03);
+}
+
+/* --- Light: Attendance dot glow --- */
+[data-theme="light"] .attendance-dot.checked-in {
+  box-shadow: 0 0 6px rgba(22, 163, 74, 0.4);
+}
+
+/* --- Light: Attendance toggle checked-in state --- */
+[data-theme="light"] .attendance-toggle-btn.checked-in {
+  border-color: rgba(22, 163, 74, 0.25);
+}
+[data-theme="light"] .attendance-toggle-btn.checked-in .att-dot {
+  box-shadow: 0 0 5px rgba(22, 163, 74, 0.4);
+}
+
+/* --- Light: Toggle switch --- */
+[data-theme="light"] .toggle input:checked + .toggle-slider {
+  box-shadow: 0 0 6px rgba(37, 99, 235, 0.2);
+}
+
+/* --- Light: Button primary glow --- */
+[data-theme="light"] .btn-primary {
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.18);
+}
+[data-theme="light"] .btn-primary:hover {
+  box-shadow: 0 4px 20px rgba(37, 99, 235, 0.25), 0 0 40px rgba(37, 99, 235, 0.08);
+}
+
+/* --- Light: Button gradient overlay (darken instead of lighten) --- */
+[data-theme="light"] .btn::after {
+  background: linear-gradient(180deg, rgba(255,255,255,0.15), transparent);
+}
+
+/* --- Light: Danger button --- */
+[data-theme="light"] .btn-danger {
+  border-color: rgba(220, 38, 38, 0.25);
+}
+[data-theme="light"] .btn-danger-outline {
+  border-color: rgba(220, 38, 38, 0.25);
+}
+[data-theme="light"] .btn-danger-outline:hover {
+  background: rgba(220, 38, 38, 0.08);
+  color: var(--danger);
+  border-color: rgba(220, 38, 38, 0.4);
+}
+
+/* --- Light: Login ambient glow --- */
+[data-theme="light"] .view-center::before {
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.06) 0%, rgba(37, 99, 235, 0.02) 40%, transparent 70%);
+}
+
+/* --- Light: Login logo shadow --- */
+[data-theme="light"] .login-logo {
+  filter: drop-shadow(0 0 12px rgba(37, 99, 235, 0.15));
+}
+
+/* --- Light: History item hours glow --- */
+[data-theme="light"] .history-item-hours {
+  text-shadow: none;
+}
+
+/* --- Light: Sync badge text on light bg --- */
+[data-theme="light"] .sync-badge {
+  color: #fff;
+  background: var(--warning);
+}
+
+/* --- Light: Analysis suggestion bg --- */
+[data-theme="light"] .analysis-suggestion {
+  background: rgba(37, 99, 235, 0.05);
+}
+[data-theme="light"] .analysis-suggestion.suggestion-done {
+  background: rgba(22, 163, 74, 0.06);
+}
+
+/* --- Light: Cards and items get visible shadows for depth --- */
+[data-theme="light"] .qs-bar-item,
+[data-theme="light"] .task-item,
+[data-theme="light"] .history-item,
+[data-theme="light"] .setting-row {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="light"] .qs-bar-item:hover,
+[data-theme="light"] .task-item:hover,
+[data-theme="light"] .history-item:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .qs-bar-item-active {
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2), 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="light"] .today-summary {
+  box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.04);
+}
+
+/* --- Light: Timer ring visible track --- */
+[data-theme="light"] .timer-ring::after {
+  border-color: rgba(200, 205, 216, 0.8);
+}
+
+/* --- Light: Bottom nav elevated --- */
+[data-theme="light"] .bottom-nav {
+  box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.06);
+}
+
+/* --- Light: Breakdown chart --- */
+[data-theme="light"] .breakdown-track,
+[data-theme="light"] .breakdown-day-track {
+  background: var(--surface-hover);
+}
+
+/* --- Light: Quick-switch hover card shadow --- */
+[data-theme="light"] .reminder-qs-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+/* --- Light: Kanban dot active state --- */
+[data-theme="light"] .kanban-dot.active {
+  border-color: var(--text-primary);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.15);
+}
+
+/* --- Light: Pulse green keyframes override --- */
+[data-theme="light"] .attendance-dot.checked-in {
+  animation: pulse-green-light 2s ease-in-out infinite;
+}
+@keyframes pulse-green-light {
+  0%, 100% { box-shadow: 0 0 3px rgba(22, 163, 74, 0.3); }
+  50%      { box-shadow: 0 0 8px rgba(22, 163, 74, 0.5); }
+}
+
+/* --- Light: History date hover --- */
+[data-theme="light"] .history-date-center:hover {
+  background: rgba(37, 99, 235, 0.06);
+}
+
+/* --- Light: Task group header hover --- */
+[data-theme="light"] .task-group-header:hover {
+  background: rgba(37, 99, 235, 0.05);
+}
+
+/* --- Light: Command palette shadow --- */
+[data-theme="light"] .command-dialog {
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.12);
+}
+
+/* --- Light: Global sync bar --- */
+[data-theme="light"] .global-sync-bar {
+  background: linear-gradient(90deg, transparent, var(--brand), transparent);
+  background-size: 200% 100%;
+}
+
+
+/* ==========================================================
+   3. COLORBLIND-FRIENDLY THEME (dark variant)
+   Safe for deuteranopia & protanopia — no red/green reliance.
+   Success = blue, danger = orange, warning = yellow.
+   Activated via: <html data-theme="colorblind">
+   ========================================================== */
+
+[data-theme="colorblind"] {
+  /* Brand palette — same blue family, slightly shifted for clarity */
+  --brand:          #3b82f6;
+  --brand-bright:   #7ab8ff;
+  --brand-deep:     #1d4ed8;
+  --brand-dim:      rgba(59, 130, 246, 0.10);
+  --brand-glow:     rgba(59, 130, 246, 0.25);
+
+  /* Surfaces — same improved dark base */
+  --base:           #0c0f1a;
+  --surface:        #141825;
+  --surface-elevated: #1c2033;
+  --surface-hover:  #252a3e;
+  --bg-input:       #10141f;
+
+  /* Text — improved contrast (matches updated dark defaults) */
+  --text-primary:   #e8ecf4;
+  --text-secondary: #9ba2b8;
+  --text-muted:     #7a8194;
+
+  /* Borders */
+  --border:         #2a2f45;
+  --border-subtle:  rgba(42, 47, 69, 0.5);
+  --border-focus:   var(--brand);
+
+  /* Status — colorblind-safe replacements:
+     Success:  green -> blue (#2563eb)
+     Danger:   red   -> orange (#ea580c)
+     Warning:  amber -> yellow (#eab308) */
+  --danger:         #ea580c;
+  --danger-hover:   #c2410c;
+  --success:        #2563eb;
+  --success-dim:    rgba(37, 99, 235, 0.12);
+  --warning:        #eab308;
+
+  /* Shadows — same as improved dark */
+  --shadow-sm:       0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-md:       0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-lg:       0 8px 32px rgba(0, 0, 0, 0.6);
+  --shadow-glow:     0 0 24px var(--brand-glow);
+  --shadow-glow-lg:  0 0 48px var(--brand-glow);
+}
+
+/* --- Colorblind: Attendance dot uses blue instead of green --- */
+[data-theme="colorblind"] .attendance-dot.checked-in {
+  background: var(--success);
+  box-shadow: 0 0 8px rgba(37, 99, 235, 0.6);
+  animation: pulse-blue 2s ease-in-out infinite;
+}
+
+@keyframes pulse-blue {
+  0%, 100% { box-shadow: 0 0 4px rgba(37, 99, 235, 0.4); }
+  50%      { box-shadow: 0 0 10px rgba(37, 99, 235, 0.7); }
+}
+
+/* --- Colorblind: Attendance toggle checked-in state --- */
+[data-theme="colorblind"] .attendance-toggle-btn.checked-in {
+  border-color: rgba(37, 99, 235, 0.3);
+  background: var(--success-dim);
+  color: var(--success);
+}
+[data-theme="colorblind"] .attendance-toggle-btn.checked-in .att-dot {
+  background: var(--success);
+  box-shadow: 0 0 6px rgba(37, 99, 235, 0.5);
+  animation: pulse-blue 2s ease-in-out infinite;
+}
+
+/* --- Colorblind: Kanban dots — use distinct shapes conceptually,
+     but at minimum use blue/orange instead of green/red --- */
+[data-theme="colorblind"] .kanban-dot.kanban-done {
+  background: var(--success);
+}
+[data-theme="colorblind"] .kanban-dot.kanban-blocked {
+  background: var(--danger);
+}
+
+/* --- Colorblind: Toast colors --- */
+[data-theme="colorblind"] .toast-error {
+  border-color: rgba(234, 88, 12, 0.35);
+  color: #fb923c;
+}
+[data-theme="colorblind"] .toast-success {
+  border-color: rgba(37, 99, 235, 0.35);
+  color: var(--success);
+}
+
+/* --- Colorblind: Danger button border --- */
+[data-theme="colorblind"] .btn-danger {
+  border-color: rgba(234, 88, 12, 0.3);
+}
+[data-theme="colorblind"] .btn-danger-outline {
+  border-color: rgba(234, 88, 12, 0.3);
+}
+[data-theme="colorblind"] .btn-danger-outline:hover {
+  background: rgba(234, 88, 12, 0.12);
+  color: #fb923c;
+  border-color: rgba(234, 88, 12, 0.5);
+}
+
+/* --- Colorblind: Suggestion done --- */
+[data-theme="colorblind"] .analysis-suggestion.suggestion-done {
+  background: var(--success-dim);
+  border-left-color: var(--success);
+}
+
+/* --- Colorblind: Sync badge text contrast --- */
+[data-theme="colorblind"] .sync-badge {
+  color: #0c0f1a;
+  background: var(--warning);
+}
+
+/* --- Colorblind: Text utility overrides --- */
+[data-theme="colorblind"] .text-danger {
+  color: var(--danger) !important;
+}
+[data-theme="colorblind"] .text-success {
+  color: var(--success) !important;
+}
+[data-theme="colorblind"] .text-warning {
+  color: var(--warning) !important;
+}
+
+/* --- Colorblind: Deadline pill overdue color --- */
+[data-theme="colorblind"] .deadline-pill.overdue {
+  color: var(--danger);
+}
+
+/* --- Colorblind: Login error --- */
+[data-theme="colorblind"] .login-error {
+  color: var(--danger);
+}
+
+/* --- Colorblind: Analysis action confirming --- */
+[data-theme="colorblind"] .analysis-action-btn.confirming {
+  background: var(--warning);
+  color: #000;
+}
+
+
+/* ==========================================================
+   TRANSITION SMOOTHING
+   Smooth base background/color change when switching themes.
+   Individual component transitions are already defined in main.css.
+   ========================================================== */
+
+html,
+body {
+  transition: background-color 300ms ease, color 300ms ease;
+}
