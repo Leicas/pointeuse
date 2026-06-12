@@ -1,6 +1,6 @@
 [package]
 name = "time-tracker"
-version = "0.1.0"
+version = "1.0.0"
 description = "Pointeuse - Odoo time tracker for desktop and Android"
 authors = ["Antoine Weill--Duflos"]
 license = "MIT"
