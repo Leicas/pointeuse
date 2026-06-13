@@ -1,3 +1,15 @@
+# [1.2.0](https://github.com/Leicas/pointeuse/compare/v1.1.0...v1.2.0) (2026-06-13)
+
+
+### Bug Fixes
+
+* **updater:** avoid nested-runtime panic when installing an update ([cf3171e](https://github.com/Leicas/pointeuse/commit/cf3171e9b128cd8b3515ced144221f33d55f6967))
+
+
+### Features
+
+* **dashboard:** redesign task list + creation UX ([72ab4b9](https://github.com/Leicas/pointeuse/commit/72ab4b93c6959e0eb37e4600fa1c86d6ff94a7ea))
+
 # [1.1.0](https://github.com/Leicas/pointeuse/compare/v1.0.1...v1.1.0) (2026-06-13)
 
 
