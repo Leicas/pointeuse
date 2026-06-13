@@ -671,6 +671,36 @@ a:hover { text-decoration: underline; }
   background: rgba(245, 158, 11, 0.1);
 }
 
+/* --- List scannability redesign --- */
+.task-card.is-priority { border-left-color: var(--warning); }
+.task-card:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--brand-bright); }
+.task-card.task-card--new { animation: cardPulse 1s ease; }
+
+.task-card-top { display: flex; align-items: flex-start; gap: 6px; }
+.task-card-top .task-card-name { flex: 1 1 auto; }
+
+.task-card-play {
+  opacity: 0; flex: 0 0 auto; width: 22px; height: 22px; border: none;
+  border-radius: var(--radius-sm); background: var(--brand-dim); color: var(--brand-bright);
+  cursor: pointer; display: grid; place-items: center; transition: opacity .12s ease, background .12s ease;
+}
+.task-card:hover .task-card-play, .task-card:focus-within .task-card-play { opacity: 1; }
+.task-card-play:hover { background: var(--brand); color: #fff; }
+
+.task-card-deadline .tcd-glyph { margin-right: 4px; }
+
+.task-card-progress {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+  background: var(--brand-dim); border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+}
+.task-card-progress > i { display: block; height: 100%; background: var(--brand); border-radius: inherit; transition: width .3s ease; }
+
+.kanban-empty.muted { opacity: .6; font-style: italic; }
+
+.filter-chip.active::before { content: "\2713 "; }
+
+@keyframes cardPulse { 0% { box-shadow: 0 0 0 2px var(--brand); } 100% { box-shadow: 0 0 0 2px transparent; } }
+
 .task-card-state-dot {
   width: 6px;
   height: 6px;
@@ -685,6 +715,38 @@ a:hover { text-decoration: underline; }
 .state-dot-waiting           { background: #a78bfa; }
 .state-dot-done              { background: var(--success); }
 .state-dot-canceled          { background: var(--text-muted); }
+
+/* --- New Task modal enrichment --- */
+.nt-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.nt-pill {
+  font-size: 11px; padding: 3px 10px; border-radius: 100px; cursor: pointer;
+  color: var(--brand-bright); background: var(--brand-dim); border: 1px solid var(--border);
+  transition: border-color .15s ease;
+}
+.nt-pill:hover, .nt-pill.active { border-color: var(--brand); }
+
+.nt-advanced > summary { cursor: pointer; font-size: 12px; color: var(--text-muted); margin: 4px 0 8px; user-select: none; }
+.nt-advanced[open] > summary { color: var(--brand-bright); }
+.form-row { display: flex; gap: 12px; }
+.form-row .form-group { flex: 1; }
+
+.nt-priority { display: flex; gap: 6px; }
+.nt-prio-btn {
+  flex: 1; padding: 6px 0; font-size: 12px; cursor: pointer;
+  background: var(--bg-input); color: var(--text-muted);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.nt-prio-btn.active { background: var(--brand-dim); color: var(--brand-bright); border-color: var(--brand); }
+
+.btn.is-loading { color: transparent !important; position: relative; pointer-events: none; }
+.btn.is-loading::after {
+  content: ""; position: absolute; inset: 0; margin: auto; width: 14px; height: 14px;
+  border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%;
+  color: #fff; animation: spin .6s linear infinite;
+}
+
+.cmd-item-dot.create { background: var(--brand); color: #fff; display: grid; place-items: center; font-weight: 700; }
+.cmd-create-row .cmd-item-name { color: var(--brand-bright); }
 
 /* ==========================================================
    DETAIL PANEL

@@ -143,7 +143,7 @@
         </div>
 
         <div class="toolbar-group">
-          <button class="filter-chip" data-filter="high-priority">
+          <button class="filter-chip" data-filter="priority">
             <span>High Priority</span>
           </button>
           <button class="filter-chip" data-filter="overdue">
@@ -428,17 +428,35 @@
         </div>
         <div class="form-group">
           <label for="new-task-project">Project</label>
+          <div id="new-task-project-pills" class="nt-pills"></div>
           <select class="form-input" id="new-task-project" required>
             <option value="">Select a project...</option>
           </select>
         </div>
-        <div class="form-group">
-          <label for="new-task-description">Description</label>
-          <textarea class="form-input" id="new-task-description" placeholder="Optional description..." rows="3" style="resize: vertical;"></textarea>
-        </div>
+        <details class="nt-advanced">
+          <summary>Add details</summary>
+          <div class="form-group">
+            <label for="new-task-description">Description</label>
+            <textarea class="form-input" id="new-task-description" placeholder="Optional description..." rows="3" style="resize: vertical;"></textarea>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="new-task-deadline">Deadline</label>
+              <input type="date" class="form-input" id="new-task-deadline" />
+            </div>
+            <div class="form-group">
+              <label>Priority</label>
+              <div class="nt-priority" id="new-task-priority" data-value="0">
+                <button type="button" class="nt-prio-btn active" data-prio="0">Normal</button>
+                <button type="button" class="nt-prio-btn" data-prio="1">High</button>
+              </div>
+            </div>
+          </div>
+        </details>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" id="btn-cancel-new-task">Cancel</button>
+        <button class="btn btn-secondary" id="btn-create-start-task">Create &amp; start</button>
         <button class="btn btn-primary" id="btn-submit-new-task">Create Task</button>
       </div>
     </div>

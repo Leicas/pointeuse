@@ -547,6 +547,21 @@ document.addEventListener('click', (e) => {
   applyFiltersAndRender();
 });
 
+// Empty-state actions
+document.addEventListener('click', (e) => {
+  if (e.target.closest('#dash-clear-filters')) {
+    store.setState({ activeFilters: new Set(), searchQuery: '' });
+    $$('.filter-chip').forEach(c => c.classList.remove('active'));
+    const search = $('#dashboard-search');
+    if (search) search.value = '';
+    applyFiltersAndRender();
+    return;
+  }
+  if (e.target.closest('#dash-empty-new-task')) {
+    toggleNewTaskForm();
+  }
+});
+
 // ── Search ───────────────────────────────────────────────────────────
 
 let searchTimeout;
@@ -867,24 +882,15 @@ function getDeadlinePill(task) {
   if (!task.date_deadline) return '';
   const now = new Date();
   const deadline = new Date(task.date_deadline + 'T23:59:59');
-  const diffMs = deadline - now;
-  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  const diffDays = Math.ceil((deadline - now) / 86400000);
 
-  let text, cls;
-  if (diffDays < 0) {
-    text = `${Math.abs(diffDays)}d overdue`;
-    cls = 'overdue';
-  } else if (diffDays === 0) {
-    text = 'Due today';
-    cls = 'soon';
-  } else if (diffDays <= 3) {
-    text = `${diffDays}d left`;
-    cls = 'soon';
-  } else {
-    text = `${diffDays}d left`;
-    cls = '';
-  }
-  return `<span class="task-card-deadline ${cls}">${text}</span>`;
+  let text, cls, glyph, label;
+  if (diffDays < 0)       { text = `${Math.abs(diffDays)}d overdue`; cls = 'overdue';  glyph = '⚠'; label = `Overdue by ${Math.abs(diffDays)} days`; }
+  else if (diffDays === 0){ text = 'Due today';                     cls = 'due-soon'; glyph = '●'; label = 'Due today'; }
+  else if (diffDays <= 3) { text = `${diffDays}d left`;             cls = 'due-soon'; glyph = '◐'; label = `Due in ${diffDays} days`; }
+  else                    { text = `${diffDays}d left`;             cls = '';         glyph = '○'; label = `Due in ${diffDays} days`; }
+
+  return `<span class="task-card-deadline ${cls}" aria-label="${escAttr(label)}" title="${escAttr(label)}"><span class="tcd-glyph" aria-hidden="true">${glyph}</span>${text}</span>`;
 }
 
 function renderTaskCard(task) {
@@ -893,18 +899,35 @@ function renderTaskCard(task) {
   const deadlinePill = getDeadlinePill(task);
   const projectName = task.project_name || 'No project';
   const isPriority = task.priority === '1' || task.priority === 1 || task.is_priority;
-  const priorityStar = isPriority ? '<span class="task-card-priority">&#9733;</span>' : '<span class="task-card-priority low">&#9734;</span>';
+  const priorityStar = isPriority
+    ? '<span class="task-card-priority">&#9733;</span>'
+    : '<span class="task-card-priority low">&#9734;</span>';
 
-  return `<div class="task-card" data-task-id="${task.id}" data-task-name="${escAttr(task.name)}"
+  const planned = Number(task.planned_hours) || 0;
+  const effective = Number(task.effective_hours) || 0;
+  let progress = '';
+  if (planned > 0) {
+    const pct = Math.min(100, Math.round((effective / planned) * 100));
+    progress = `<div class="task-card-progress" title="${effective.toFixed(1)}h / ${planned.toFixed(1)}h logged"><i style="width:${pct}%"></i></div>`;
+  }
+
+  return `<div class="task-card${isPriority ? ' is-priority' : ''}" tabindex="0" role="button"
+    data-task-id="${task.id}" data-task-name="${escAttr(task.name)}"
     data-project-id="${task.project_id || 0}" data-project-name="${escAttr(task.project_name || '')}"
     data-state="${escAttr(stateKey)}">
-    <div class="task-card-name">${esc(task.name)}</div>
+    <div class="task-card-top">
+      <div class="task-card-name">${esc(task.name)}</div>
+      <button class="task-card-play" data-tc-play title="Start timer" aria-label="Start timer on this task">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="7 4 20 12 7 20"/></svg>
+      </button>
+    </div>
     <div class="task-card-meta">
       <span class="task-card-state-dot" style="background: ${cfg.color}"></span>
       <span class="task-card-project">${esc(projectName)}</span>
       ${deadlinePill}
       ${priorityStar}
     </div>
+    ${progress}
   </div>`;
 }
 
@@ -920,8 +943,25 @@ function renderKanbanBoard() {
   }
 
   if (!filteredTasks || filteredTasks.length === 0) {
-    mainEl.innerHTML = '<div class="dash-empty"><p>No tasks match your filters</p></div>';
+    const { activeFilters, searchQuery, tasks } = store.getState();
+    const isFiltered = (activeFilters && activeFilters.size) || (searchQuery && searchQuery.trim());
+    mainEl.innerHTML = isFiltered
+      ? `<div class="dash-empty"><p>No tasks match your filters</p>
+           <button class="btn btn-secondary btn-sm" id="dash-clear-filters">Clear filters</button></div>`
+      : (tasks && tasks.length)
+        ? `<div class="dash-empty"><p>All caught up — nothing in this view.</p></div>`
+        : `<div class="dash-empty"><p>No tasks yet</p>
+             <button class="btn btn-primary btn-sm" id="dash-empty-new-task">Create your first task</button></div>`;
     return;
+  }
+
+  // Totals from unfiltered tasks, for "shown / total" labels when filtering
+  const { tasks: allTasks, activeFilters: af, searchQuery: sq } = store.getState();
+  const isFiltered = (af && af.size) || (sq && sq.trim());
+  const totalByState = {};
+  for (const t of (allTasks || [])) {
+    const k = (t.state && (STATE_CONFIG[t.state] ? t.state : '_other')) || '_other';
+    totalByState[k] = (totalByState[k] || 0) + 1;
   }
 
   // Group by state
@@ -950,7 +990,7 @@ function renderKanbanBoard() {
       <div class="kanban-header" data-collapse-state="${escAttr(key)}">
         <span class="kanban-state-dot" style="background: ${cfg.color}"></span>
         <span class="kanban-column-title">${cfg.label}</span>
-        <span class="kanban-count">${columnTasks.length}</span>
+        <span class="kanban-count" title="${columnTasks.length} shown of ${totalByState[key] || 0}">${isFiltered ? `${columnTasks.length} / ${totalByState[key] || 0}` : `${columnTasks.length}`}</span>
         <button class="kanban-collapse-btn" title="${isCollapsed ? 'Expand' : 'Collapse'}">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
             <polyline points="${isCollapsed ? '9 18 15 12 9 6' : '18 15 12 9 6 15'}"/>
@@ -960,7 +1000,7 @@ function renderKanbanBoard() {
       <div class="kanban-body">`;
 
     if (columnTasks.length === 0) {
-      html += '<div class="kanban-empty">No tasks</div>';
+      html += isFiltered ? '<div class="kanban-empty muted">No matches</div>' : '<div class="kanban-empty">No tasks</div>';
     } else {
       for (const t of columnTasks) {
         html += renderTaskCard(t);
@@ -1007,12 +1047,35 @@ document.addEventListener('click', (e) => {
 // ── Task Card Click -> Detail Panel ──────────────────────────────────
 
 document.addEventListener('click', async (e) => {
+  // Play button: start the timer directly, don't open the detail panel
+  const play = e.target.closest('[data-tc-play]');
+  if (play) {
+    e.stopPropagation();
+    const card = play.closest('.task-card[data-task-id]');
+    if (!card) return;
+    try {
+      await api.startTimer(Number(card.dataset.taskId), card.dataset.taskName,
+        Number(card.dataset.projectId) || 0, card.dataset.projectName);
+      showToast(`Timer started: ${card.dataset.taskName}`, 'success');
+    } catch (err) { showToast(prettifyOdooError(err)); }
+    return;
+  }
   const card = e.target.closest('.task-card[data-task-id]');
   if (!card) return;
   // Skip if inside command palette
-  if (card.closest('#command-palette')) return;
+  if (card.closest('#cmd-palette')) return;
   const taskId = parseInt(card.dataset.taskId);
   openDetailPanel(taskId);
+});
+
+// Enter-to-open for keyboard-focused cards
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  const active = document.activeElement;
+  if (active && active.matches && active.matches('.task-card[data-task-id]') && !active.closest('#cmd-palette')) {
+    e.preventDefault();
+    openDetailPanel(parseInt(active.dataset.taskId));
+  }
 });
 
 // ── Detail Panel ─────────────────────────────────────────────────────
@@ -1816,10 +1879,78 @@ function attachTimelogListeners() {
 // ── New Task ─────────────────────────────────────────────────────────
 
 let newTaskFormOpen = false;
+let newTaskDraft = null;
 
 $('#btn-new-task')?.addEventListener('click', () => {
   toggleNewTaskForm();
 });
+
+function prettifyOdooError(err) {
+  const s = String(err);
+  return s.replace(/^.*?(?:Odoo|AppError|Error)\s*[:(]\s*/i, '').replace(/\)$/, '').trim() || s;
+}
+
+// Pick a sensible default project: single active all-tasks project filter, else most-used, else null
+function defaultProjectId() {
+  const { allTasksFilterProjects } = store.getState();
+  if (Array.isArray(allTasksFilterProjects) && allTasksFilterProjects.length === 1) {
+    return allTasksFilterProjects[0];
+  }
+  const usage = getProjectUsage();
+  let bestId = null, best = null;
+  for (const [id, entry] of Object.entries(usage)) {
+    if (!best || (entry.count || 0) > best.count ||
+        ((entry.count || 0) === best.count && (entry.lastUsed || 0) > (best.lastUsed || 0))) {
+      best = entry; bestId = Number(id);
+    }
+  }
+  return bestId;
+}
+
+// Render up to 3 suggested project pills (same usage-sort as populateProjectSelect)
+function renderProjectPills(projects) {
+  const wrap = $('#new-task-project-pills');
+  if (!wrap) return;
+  const usage = getProjectUsage();
+  const withUsage = [...projects].filter(p => (usage[p.id]?.count || 0) > 0);
+  withUsage.sort((a, b) => {
+    const ua = usage[a.id], ub = usage[b.id];
+    if (ub.count !== ua.count) return ub.count - ua.count;
+    return (ub.lastUsed || 0) - (ua.lastUsed || 0);
+  });
+  const top = withUsage.slice(0, 3);
+  wrap.innerHTML = top.map(p =>
+    `<button type="button" class="nt-pill" data-project-pill="${p.id}">${esc(p.name)}</button>`
+  ).join('');
+}
+
+async function createTaskFlow(name, projectId, { description, deadline, priority, startTimer } = {}) {
+  const task = await api.createTask(name, projectId);  // backend contract: name + projectId ONLY
+  // Fresh Odoo tasks come back with a null state; show the optimistic card in
+  // the default column instead of "Other" until the next sync corrects it.
+  if (!task.state) task.state = '01_in_progress';
+  bumpProjectUsage(projectId);
+  // Enrich via existing update commands on the returned id (non-fatal each)
+  const extras = [];
+  if (description) { extras.push(api.updateTaskDescription(task.id, description).then(() => { task.description = description; })); }
+  if (deadline)    { extras.push(api.updateTaskDeadline(task.id, deadline).then(() => { task.date_deadline = deadline; })); }
+  if (priority === '1') { extras.push(api.updateTaskPriority(task.id, '1').then(() => { task.priority = '1'; })); }
+  await Promise.allSettled(extras);
+
+  const { tasks } = store.getState();
+  store.setState({ tasks: [task, ...tasks] });
+  // Auto-expand the column this task lands in so it's visible
+  const collapsed = new Set(store.getState().collapsedColumns);
+  if (collapsed.has(task.state)) { collapsed.delete(task.state); store.setState({ collapsedColumns: collapsed }); }
+  applyFiltersAndRender();
+  // Flash the new card
+  requestAnimationFrame(() => $(`.task-card[data-task-id="${task.id}"]`)?.classList.add('task-card--new'));
+
+  if (startTimer) {
+    try { await api.startTimer(task.id, task.name, projectId, task.project_name); } catch (_) {}
+  }
+  return task;
+}
 
 function toggleNewTaskForm() {
   const form = $('#new-task-modal');
@@ -1829,35 +1960,63 @@ function toggleNewTaskForm() {
   form.classList.toggle('open', newTaskFormOpen);
 
   if (newTaskFormOpen) {
-    // Populate project dropdown
     const { projects } = store.getState();
     populateProjectSelect($('#new-task-project'), projects || []);
+    renderProjectPills(projects || []);
+    const def = defaultProjectId();
+    if (def) $('#new-task-project').value = String(def);
     const nameInput = $('#new-task-name');
-    if (nameInput) { nameInput.value = ''; nameInput.focus(); }
+    if (nameInput) { nameInput.value = newTaskDraft ? (newTaskDraft.name || '') : ''; nameInput.focus(); }
+  } else {
+    // Stash a draft on close-without-submit
+    const n = $('#new-task-name')?.value.trim();
+    newTaskDraft = n ? { name: n } : null;
   }
 }
 
-$('#btn-submit-new-task')?.addEventListener('click', async () => {
-  const nameInput = $('#new-task-name');
-  const projectSelect = $('#new-task-project');
-  const name = nameInput?.value.trim();
-  const projectId = parseInt(projectSelect?.value);
-
+async function submitNewTask({ startTimer } = {}) {
+  const name = $('#new-task-name')?.value.trim();
+  const projectId = parseInt($('#new-task-project')?.value);
   if (!name) { showToast('Task name is required'); return; }
   if (!projectId) { showToast('Please select a project'); return; }
 
+  const description = $('#new-task-description')?.value.trim() || '';
+  const deadline = $('#new-task-deadline')?.value || '';
+  const priority = $('#new-task-priority')?.dataset.value === '1' ? '1' : '0';
+
+  const btns = [$('#btn-submit-new-task'), $('#btn-create-start-task')];
+  btns.forEach(b => { if (b) { b.disabled = true; b.classList.add('is-loading'); } });
   try {
-    const task = await api.createTask(name, projectId);
-    bumpProjectUsage(projectId);
+    await createTaskFlow(name, projectId, { description, deadline, priority, startTimer });
     showToast(`Task "${name}" created`, 'success');
+    newTaskDraft = null;
     toggleNewTaskForm();
-    // Add to task list and refresh
-    const { tasks } = store.getState();
-    store.setState({ tasks: [task, ...tasks] });
-    applyFiltersAndRender();
   } catch (err) {
-    showToast('Failed to create task: ' + String(err));
+    showToast('Failed to create task: ' + prettifyOdooError(err));
+  } finally {
+    btns.forEach(b => { if (b) { b.disabled = false; b.classList.remove('is-loading'); } });
   }
+}
+
+$('#btn-submit-new-task')?.addEventListener('click', () => submitNewTask());
+$('#btn-create-start-task')?.addEventListener('click', () => submitNewTask({ startTimer: true }));
+
+// Project pill click -> set the select value
+$('#new-task-project-pills')?.addEventListener('click', (e) => {
+  const pill = e.target.closest('[data-project-pill]');
+  if (!pill) return;
+  const sel = $('#new-task-project');
+  if (sel) sel.value = pill.dataset.projectPill;
+  $$('#new-task-project-pills .nt-pill').forEach(p => p.classList.toggle('active', p === pill));
+});
+
+// Priority toggle
+$('#new-task-priority')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.nt-prio-btn');
+  if (!btn) return;
+  const group = $('#new-task-priority');
+  group.dataset.value = btn.dataset.prio;
+  $$('#new-task-priority .nt-prio-btn').forEach(b => b.classList.toggle('active', b === btn));
 });
 
 $('#btn-cancel-new-task')?.addEventListener('click', () => {
@@ -1873,12 +2032,32 @@ $('#new-task-modal')?.addEventListener('click', (e) => {
 
 $('#new-task-modal')?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
+    // Allow newlines in the description textarea
+    if (e.target && e.target.id === 'new-task-description') return;
     e.preventDefault();
-    $('#btn-submit-new-task')?.click();
+    submitNewTask();
+    return;
   }
   if (e.key === 'Escape') {
     e.preventDefault();
     if (newTaskFormOpen) toggleNewTaskForm();
+    return;
+  }
+  if (e.key === 'Tab') {
+    // Focus trap inside the modal card
+    const card = $('#new-task-modal .modal-card');
+    if (!card) return;
+    const focusable = Array.from(card.querySelectorAll(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])'
+    )).filter(el => el.offsetParent !== null);
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault(); last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault(); first.focus();
+    }
   }
 });
 
@@ -1919,12 +2098,24 @@ async function loadCommandRecentTasks() {
   }
 }
 
-function renderCommandResults(tasks) {
+function renderCommandResults(tasks, query) {
   const resultsEl = $('#cmd-results');
   if (!resultsEl) return;
 
+  const q = (query || '').trim();
+  const createRow = q
+    ? `<div class="cmd-item cmd-create-row" data-cmd-create data-name="${escAttr(q)}">
+        <span class="cmd-item-dot create">+</span>
+        <span class="cmd-item-name">Create "${esc(q)}"…</span>
+        <span class="cmd-item-project">opens New Task</span>
+      </div>`
+    : '';
+
   if (!tasks || tasks.length === 0) {
-    resultsEl.innerHTML = '<div class="dash-empty"><p>No tasks found</p></div>';
+    resultsEl.innerHTML = q
+      ? createRow
+      : '<div class="dash-empty"><p>No tasks found</p></div>';
+    commandActiveIndex = -1;
     return;
   }
 
@@ -1960,7 +2151,7 @@ function renderCommandResults(tasks) {
     }
   }
 
-  resultsEl.innerHTML = html;
+  resultsEl.innerHTML = html + createRow;
   commandActiveIndex = -1;
 }
 
@@ -1976,6 +2167,15 @@ function updateCommandActive() {
 
 function selectCommandItem(el) {
   if (!el) return;
+  if (el.hasAttribute('data-cmd-create')) {
+    const name = el.dataset.name || '';
+    closeCommandPalette();
+    if (!newTaskFormOpen) toggleNewTaskForm();
+    const nameInput = $('#new-task-name');
+    if (nameInput) nameInput.value = name;
+    $('#new-task-project')?.focus();
+    return;
+  }
   const taskId = parseInt(el.dataset.taskId);
   closeCommandPalette();
   openDetailPanel(taskId);
@@ -2000,15 +2200,25 @@ $('#cmd-search')?.addEventListener('input', (e) => {
       if (newTasks.length > 0) {
         store.setState({ tasks: [...existing, ...newTasks] });
       }
-      renderCommandResults(commandTasks);
+      renderCommandResults(commandTasks, q);
     } catch (_) {
-      renderCommandResults([]);
+      renderCommandResults([], q);
     }
   }, 200);
 });
 
 // Click on command item
 document.addEventListener('click', (e) => {
+  const createRow = e.target.closest('[data-cmd-create]');
+  if (createRow) {
+    const name = createRow.dataset.name || '';
+    closeCommandPalette();
+    if (!newTaskFormOpen) toggleNewTaskForm();
+    const nameInput = $('#new-task-name');
+    if (nameInput) nameInput.value = name;
+    $('#new-task-project')?.focus();
+    return;
+  }
   const item = e.target.closest('#cmd-results .cmd-item[data-task-id]');
   if (item) {
     selectCommandItem(item);
