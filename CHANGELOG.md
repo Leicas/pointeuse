@@ -1,3 +1,15 @@
+# [1.1.0](https://github.com/Leicas/pointeuse/compare/v1.0.1...v1.1.0) (2026-06-13)
+
+
+### Bug Fixes
+
+* **android:** add WorkManager dependency to app module in post-init patch ([0bb9875](https://github.com/Leicas/pointeuse/commit/0bb9875e5ea11635b633ca87a2c545ee78b4eae1))
+
+
+### Features
+
+* **branding:** replace H mark with a clock + checkmark logo ([4311fd7](https://github.com/Leicas/pointeuse/commit/4311fd730f537c8c542ad17da926a775a2e7503e))
+
 ## [1.0.1](https://github.com/Leicas/pointeuse/compare/v1.0.0...v1.0.1) (2026-06-13)
 
 
