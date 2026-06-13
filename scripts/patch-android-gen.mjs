@@ -78,4 +78,33 @@ for (const kt of readdirSync(overlayDir).filter((f) => f.endsWith('.kt'))) {
   console.log(`[patch-android-gen] kotlin: ${kt} -> ${join(pkgDir, kt)}`);
 }
 
+// --- 4) Ensure the app module depends on WorkManager ------------------------
+// AppWorkerFactory / MainActivity / ScheduledTaskWorkerOverride import
+// androidx.work.*, and the overlay manifest disables Tauri's default
+// WorkManager auto-init so MainActivity installs a custom WorkerFactory via
+// on-demand initialization. The schedule-task plugin pulls WorkManager in only
+// as `implementation`, so it is not exposed to the app module — without this
+// the app's Kotlin fails to compile (Unresolved reference: WorkManager/Worker/
+// WorkerFactory/...). Declare it directly on the app module.
+const WORK_DEP = 'implementation("androidx.work:work-runtime-ktx:2.9.1")';
+const appGradlePath = join(genAndroid, 'app', 'build.gradle.kts');
+if (!existsSync(appGradlePath)) {
+  console.error('[patch-android-gen] app/build.gradle.kts not found at', appGradlePath);
+  process.exit(1);
+}
+let appGradle = readFileSync(appGradlePath, 'utf8');
+if (appGradle.includes('androidx.work:work-runtime-ktx')) {
+  console.log('[patch-android-gen] gradle: androidx.work dependency already present');
+} else {
+  const depsMatch = appGradle.match(/dependencies\s*\{/);
+  if (!depsMatch) {
+    console.error('[patch-android-gen] no `dependencies { }` block in app/build.gradle.kts');
+    process.exit(1);
+  }
+  const insertAt = depsMatch.index + depsMatch[0].length;
+  appGradle = `${appGradle.slice(0, insertAt)}\n    ${WORK_DEP}${appGradle.slice(insertAt)}`;
+  writeFileSync(appGradlePath, appGradle);
+  console.log('[patch-android-gen] gradle: added androidx.work dependency to app module');
+}
+
 console.log('[patch-android-gen] done.');
