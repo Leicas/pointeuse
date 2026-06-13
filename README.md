@@ -4,6 +4,27 @@ A fast, native time tracker for [Odoo](https://www.odoo.com/) — desktop (Windo
 
 *Pointeuse* is French for a punch clock.
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/connect.png" alt="Connect to your Odoo workspace" width="300">
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/timer.png" alt="Timer window with today's tasks" width="300">
+</p>
+<p align="center"><em>Connect to any Odoo instance &middot; track time against a task, with today's totals at a glance</em></p>
+
+<p align="center">
+  <img src="docs/screenshots/dashboard.png" alt="Task dashboard — kanban grouped by stage" width="820">
+</p>
+<p align="center"><em>Task dashboard — kanban grouped by stage, with effort bars, deadlines, and one-click timer start</em></p>
+
+<p align="center">
+  <img src="docs/screenshots/new-task.png" alt="Create a new task" width="820">
+</p>
+<p align="center"><em>Create a task — and optionally start tracking it — without leaving the app</em></p>
+
+> Screens use a throwaway Odoo demo with sample projects/tasks.
+
 ## What it does
 
 - **Track time against Odoo tasks** — start/stop a timer on any `project.task`, timesheets land in `account.analytic.line`
@@ -20,7 +41,7 @@ Pointeuse talks to any Odoo 14+ instance over standard XML-RPC (`/xmlrpc/2/`) �
 
 - your Odoo server URL
 - your database name
-- your login + password (or API key); stored in the system keyring, never on disk
+- your login + password — or an **API key** (required for Odoo Online / SaaS, where the account password is blocked for external XML-RPC); stored in the system keyring, never on disk
 
 ## Install
 
