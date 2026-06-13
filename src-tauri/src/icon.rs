@@ -1,5 +1,6 @@
 /// Generate the Pointeuse tray icon as raw RGBA pixels.
-/// Design: Blue circle arc (clock) with white "P" letterform, transparent background.
+/// Design: blue clock ring (bright top-right arc) with a white checkmark whose
+/// two strokes read as the clock's hands — "time, tracked". Transparent bg.
 /// Rendered at 64x64 for HiDPI crispness — Windows will downscale as needed.
 /// Returns (width, height, rgba_bytes).
 pub fn generate_tray_icon(size: u32) -> (u32, u32, Vec<u8>) {
@@ -13,7 +14,7 @@ pub fn generate_tray_icon(size: u32) -> (u32, u32, Vec<u8>) {
     let brand_bright = [96u8, 165, 250, 255];
     // Brand blue: #3b82f6 at 35% opacity for the rest of the ring
     let brand_dim = [59u8, 130, 246, 255];
-    // White for H letterform — full brightness
+    // White for the checkmark — full brightness, crisp at small sizes
     let white = [255u8, 255, 255, 255];
 
     for y in 0..size {
@@ -44,34 +45,22 @@ pub fn generate_tray_icon(size: u32) -> (u32, u32, Vec<u8>) {
                 }
             }
 
-            // "P" letterform — stem + bowl, bold and clear
-            let p_top = center - s * 0.22;
-            let p_bottom = center + s * 0.22;
-            let stem_x = center - s * 0.11;
-            let bar_width = s * 0.10;
-            let bowl_mid_r = s * 0.09;
-            let bowl_cy = p_top + bowl_mid_r + bar_width / 2.0;
+            // Checkmark — two rounded strokes meeting at the vertex, reading
+            // as the clock's hands. Drawn via distance-to-segment (capsules),
+            // which gives clean rounded caps and crisp antialiasing.
+            let vx = center - s * 0.04; // vertex (lowest point of the check)
+            let vy = center + s * 0.14;
+            let short_x = center - s * 0.20; // upper-left (short hand)
+            let short_y = center - s * 0.02;
+            let long_x = center + s * 0.22; // upper-right (long hand)
+            let long_y = center - s * 0.18;
+            let stroke_hw = s * 0.055; // half stroke width
 
-            // Stem (left vertical, full letter height)
-            if fx >= stem_x - bar_width / 2.0 && fx <= stem_x + bar_width / 2.0
-                && fy >= p_top && fy <= p_bottom
-            {
-                let aa_x = soft_edge(fx, stem_x - bar_width / 2.0, stem_x + bar_width / 2.0);
-                let aa_y = soft_edge(fy, p_top, p_bottom);
-                blend_pixel(&mut pixels[idx..idx + 4], &white, aa_x * aa_y);
-            }
-
-            // Bowl (right half-annulus attached to the stem's upper part)
-            let bdx = fx - stem_x;
-            let bdy = fy - bowl_cy;
-            let bdist = (bdx * bdx + bdy * bdy).sqrt();
-            let bowl_inner = bowl_mid_r - bar_width / 2.0;
-            let bowl_outer = bowl_mid_r + bar_width / 2.0;
-            if bdx >= 0.0 && bdist >= bowl_inner - 1.0 && bdist <= bowl_outer + 1.0 {
-                let aa = antialiased_ring(bdist, bowl_inner, bowl_outer);
-                if aa > 0.0 {
-                    blend_pixel(&mut pixels[idx..idx + 4], &white, aa);
-                }
+            let d_short = dist_to_segment(fx, fy, vx, vy, short_x, short_y);
+            let d_long = dist_to_segment(fx, fy, vx, vy, long_x, long_y);
+            let check_aa = (stroke_hw + 0.75 - d_short.min(d_long)).clamp(0.0, 1.0);
+            if check_aa > 0.0 {
+                blend_pixel(&mut pixels[idx..idx + 4], &white, check_aa);
             }
         }
     }
@@ -79,18 +68,26 @@ pub fn generate_tray_icon(size: u32) -> (u32, u32, Vec<u8>) {
     (size, size, pixels)
 }
 
+/// Shortest distance from point (px,py) to the segment (ax,ay)-(bx,by).
+fn dist_to_segment(px: f64, py: f64, ax: f64, ay: f64, bx: f64, by: f64) -> f64 {
+    let abx = bx - ax;
+    let aby = by - ay;
+    let ab2 = abx * abx + aby * aby;
+    let t = if ab2 == 0.0 {
+        0.0
+    } else {
+        (((px - ax) * abx + (py - ay) * aby) / ab2).clamp(0.0, 1.0)
+    };
+    let dx = px - (ax + t * abx);
+    let dy = py - (ay + t * aby);
+    (dx * dx + dy * dy).sqrt()
+}
+
 fn antialiased_ring(dist: f64, inner: f64, outer: f64) -> f64 {
     let aa = 1.0;
     let inner_aa = ((dist - inner) / aa + 0.5).clamp(0.0, 1.0);
     let outer_aa = ((outer - dist) / aa + 0.5).clamp(0.0, 1.0);
     inner_aa * outer_aa
-}
-
-fn soft_edge(val: f64, min: f64, max: f64) -> f64 {
-    let aa = 0.8;
-    let lo = ((val - min) / aa + 0.5).clamp(0.0, 1.0);
-    let hi = ((max - val) / aa + 0.5).clamp(0.0, 1.0);
-    lo * hi
 }
 
 fn blend_pixel(dst: &mut [u8], color: &[u8; 4], alpha: f64) {
