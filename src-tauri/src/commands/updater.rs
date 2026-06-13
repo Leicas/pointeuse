@@ -92,26 +92,45 @@ pub async fn install_update(
             AppError::General("No pending update to install".into())
         })?;
 
-        let mut downloaded = 0;
-        update
-            .download_and_install(
-                |chunk_len, content_len| {
-                    downloaded += chunk_len;
-                    log::info!(
-                        "install_update: downloaded {} / {}",
-                        downloaded,
-                        content_len.unwrap_or(0)
-                    );
-                },
-                || {
-                    log::info!("install_update: download complete, installing...");
-                },
-            )
-            .await
-            .map_err(|e| AppError::General(format!("Install failed: {e}")))?;
+        // `download_and_install` + `app.restart()` must NOT run on a Tokio worker
+        // thread. This command is `async`, so it executes on a runtime worker, and
+        // `restart()`'s cleanup blocks on the async runtime — which panics with
+        // "Cannot start a runtime from within a runtime" when the caller is itself
+        // a worker. Drive the whole thing from a dedicated OS thread instead;
+        // `async_runtime::block_on` there uses the global runtime legally (the
+        // thread is not one of its workers).
+        let restart_handle = app.clone();
+        let install = std::thread::spawn(move || -> Result<(), String> {
+            tauri::async_runtime::block_on(async move {
+                let mut downloaded = 0;
+                update
+                    .download_and_install(
+                        |chunk_len, content_len| {
+                            downloaded += chunk_len;
+                            log::info!(
+                                "install_update: downloaded {} / {}",
+                                downloaded,
+                                content_len.unwrap_or(0)
+                            );
+                        },
+                        || {
+                            log::info!("install_update: download complete, installing...");
+                        },
+                    )
+                    .await
+                    .map_err(|e| e.to_string())
+            })?;
+            log::info!("install_update: done, restarting");
+            restart_handle.restart();
+        });
 
-        log::info!("install_update: done, restart required");
-        app.restart();
+        // On success the installer thread restarts the process and never returns;
+        // surface a failure (or a thread panic) back to the frontend.
+        match install.join() {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(e)) => Err(AppError::General(format!("Install failed: {e}"))),
+            Err(_) => Err(AppError::General("Update install thread panicked".into())),
+        }
     }
 
     #[cfg(mobile)]
