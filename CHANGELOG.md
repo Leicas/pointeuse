@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/Leicas/pointeuse/compare/v1.2.0...v1.3.0) (2026-07-30)
+
+
+### Features
+
+* **timesheet:** add manual entry composer with create, edit and delete ([874796c](https://github.com/Leicas/pointeuse/commit/874796c1a7f98a59de2bf3d7ebb2d99a844f539f))
+
 # [1.2.0](https://github.com/Leicas/pointeuse/compare/v1.1.0...v1.2.0) (2026-06-13)
 
 
