@@ -1,6 +1,11 @@
 // Pointeuse — Main Application
 // Single-file frontend for Tauri v2
 
+import {
+  createEntryComposer, reconcileEntries, entryCapabilities,
+  rowActionsHtml, rowAttrs, pendingBadgeHtml, pendingToRow,
+} from './entry-composer.js';
+
 function getInvoke() {
   if (window.__TAURI__?.core?.invoke) return window.__TAURI__.core.invoke;
   throw new Error('Tauri API not available');
@@ -54,6 +59,8 @@ const store = createStore({
   historyDate: null, // YYYY-MM-DD, null = today
   historyMode: 'day', // 'day' or 'month'
   monthYear: null, // { year, month } for month view
+  todayPending: [],   // queued rows for the viewed date, never summed into the total
+  justAddedKey: null, // "<task_id>|<hours>" — flashes the new row once
 });
 
 // ── API Layer ─────────────────────────────────────────────────────────
@@ -122,6 +129,17 @@ const api = {
   getDefaultTask: () => invoke('get_default_task'),
   setDefaultTask: (taskId, taskName, projectId, projectName) => invoke('set_default_task', { taskId, taskName, projectId, projectName }),
   clearDefaultTask: () => invoke('clear_default_task'),
+  // Manual timesheet entry
+  preflightManualEntry: (taskId, projectId, durationHours, date, excludeOdooId) =>
+    invoke('preflight_manual_entry', { taskId, projectId, durationHours, date, excludeOdooId: excludeOdooId ?? null }),
+  createManualEntry: (taskId, projectId, taskName, projectName, description, durationHours, date, allowDuplicate) =>
+    invoke('create_manual_entry', { taskId, projectId, taskName, projectName, description, durationHours, date, allowDuplicate }),
+  updateTimesheetEntry: (odooId, taskId, projectId, taskName, projectName, description, durationHours, date, originalDate) =>
+    invoke('update_timesheet_entry', { odooId, taskId, projectId, taskName, projectName, description, durationHours, date, originalDate }),
+  deleteTimesheetEntry: (odooId, taskId, date) => invoke('delete_timesheet_entry', { odooId, taskId, date }),
+  updatePendingEntry: (entryId, taskId, projectId, taskName, projectName, description, durationHours, date, allowDuplicate) =>
+    invoke('update_pending_entry', { entryId, taskId, projectId, taskName, projectName, description, durationHours, date, allowDuplicate }),
+  getPendingForDate: (date) => invoke('get_pending_for_date', { date }),
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────
@@ -268,6 +286,38 @@ function showToast(msg, type = 'error') {
   clearTimeout(toastTimeout);
   toastTimeout = setTimeout(() => el.classList.remove('visible'), 4000);
 }
+
+// ── Manual entry composer ────────────────────────────────────────────
+
+/** Queued rows for a date. get_entries_for_date never consults the queue, so
+ *  this is a second, additive request rendered as visually distinct rows. */
+async function refreshPendingFor(dateStr) {
+  try {
+    const pending = await api.getPendingForDate(dateStr);
+    const rows = (pending || []).map(pendingToRow);
+    return reconcileEntries(store.getState().todayEntries || [], rows);
+  } catch (_) { return []; }
+}
+
+const composer = createEntryComposer({
+  invoke,
+  showToast,
+  variant: 'tray',
+  getViewedDate: () => getHistoryDate(),
+  onChanged: async (date, info) => {
+    if (info && (info.outcome === 'created' || info.outcome === 'restored') && info.entry) {
+      store.setState({ justAddedKey: `${info.entry.task_id || 0}|${(info.entry.hours || 0).toFixed(2)}` });
+    }
+    // Route through the existing refresh so state.todayEntries changes
+    // identity — #timer-breakdown, the header total and the weekly chart then
+    // update for free via the subscribers that already exist.
+    if (date === getHistoryDate()) {
+      if (date === todayDate()) await refreshTodayEntries();
+      else await goToHistoryDate(date);
+    }
+    store.setState({ todayPending: await refreshPendingFor(getHistoryDate()) });
+  },
+});
 
 // ── Titlebar ──────────────────────────────────────────────────────────
 
@@ -818,9 +868,28 @@ try {
     // Only update if we're currently viewing this date
     const currentDate = getHistoryDate();
     if (date === currentDate || date === todayDate()) {
-      store.setState({ todayEntries: entries });
+      const rows = entries || [];
+      // Authoritative reconciliation: drop any queued row now represented
+      // upstream, otherwise the day double-counts for one refresh cycle.
+      store.setState({
+        todayEntries: rows,
+        todayPending: reconcileEntries(rows, store.getState().todayPending || []),
+      });
     }
     hideSyncIndicator();
+  });
+
+  // Fires synchronously at the end of every mutation, one network round-trip
+  // BEFORE entries_refreshed, so the other window reacts immediately.
+  window.__TAURI__?.event?.listen('ledger_changed', async (event) => {
+    const p = event.payload || {};
+    const currentDate = getHistoryDate();
+    if (p.date && p.date !== currentDate) return;
+    store.setState({ todayPending: await refreshPendingFor(currentDate) });
+    try {
+      const ss = await api.getSyncStatus();
+      store.setState({ syncStatus: ss });
+    } catch (_) {}
   });
   window.__TAURI__?.event?.listen('monthly_refreshed', (event) => {
     const summary = event.payload;
@@ -1124,8 +1193,12 @@ store.subscribe((state) => {
     dayElems.forEach(el => { if (el) el.style.display = ''; });
     if (monthView) monthView.style.display = 'none';
 
-    if (entries.length === 0) {
-      listEl.innerHTML = `<div class="empty-state"><p>No time entries for ${formatDateLabel(date)}</p></div>`;
+    const pendingRows = state.todayPending || [];
+    if (entries.length === 0 && pendingRows.length === 0) {
+      listEl.innerHTML = `<div class="empty-state">
+        <p>No time entries for ${formatDateLabel(date)}</p>
+        <button class="btn btn-sm btn-primary" id="history-empty-add">Add entry</button>
+      </div>`;
     } else {
       const totalH = entries.reduce((s, e) => s + (e.hours || 0), 0);
       let chartHtml = '<div class="timelog-day-chart">';
@@ -1139,21 +1212,25 @@ store.subscribe((state) => {
       }
       chartHtml += '</div>';
 
-      listEl.innerHTML = chartHtml + entries.map(e => `
-        <div class="history-item">
-          <div class="history-item-info">
-            <span class="history-item-name">${esc(e.task_name)}</span>
-            <span class="history-item-desc">${esc(e.description || '')}</span>
-          </div>
-          <span class="history-item-hours">${formatHours(e.hours || 0)}</span>
-        </div>
-      `).join('');
+      listEl.innerHTML = chartHtml
+        + entries.map(e => renderHistoryRow(e, state.justAddedKey)).join('')
+        + pendingRows.map(p => renderHistoryRow(p, null)).join('');
     }
+    // Deferred: setState inside a subscriber would re-enter the whole
+    // listener loop synchronously. The flash is one-shot either way.
+    if (state.justAddedKey) setTimeout(() => store.setState({ justAddedKey: null }), 0);
   }
 
+  // Queued hours are reported as their own figure, never folded into the
+  // Odoo total — that is honest about what the employer can actually see,
+  // and it sidesteps the double-count while a row is still in the queue.
   const total = entries.reduce((s, e) => s + (e.hours || 0), 0);
+  const pendingH = (state.todayPending || []).reduce((s, e) => s + (e.hours || 0), 0);
   const totalEl = $('#history-total');
-  if (totalEl) totalEl.textContent = formatHours(total);
+  if (totalEl) {
+    totalEl.innerHTML = esc(formatHours(total))
+      + (pendingH > 0 ? ` <span class="ec-queued-note">+${esc(formatHours(pendingH))} queued</span>` : '');
+  }
 
   const badge = $('#sync-badge');
   if (badge) {
@@ -1174,6 +1251,96 @@ store.subscribe((state) => {
   if (analyzeBtn) {
     analyzeBtn.textContent = date === todayDate() ? 'Analyze Day' : `Analyze ${formatDateLabel(date)}`;
   }
+});
+
+/** One history row, with actions gated on `source` (see entryCapabilities). */
+function renderHistoryRow(e, justAddedKey) {
+  const cap = entryCapabilities(e);
+  const key = `${e.task_id || 0}|${(e.hours || 0).toFixed(2)}`;
+  const cls = [
+    'history-item',
+    cap.kind === 'pending' ? 'is-pending' : '',
+    cap.kind === 'local' ? 'is-readonly' : '',
+    justAddedKey && justAddedKey === key ? 'just-added' : '',
+  ].filter(Boolean).join(' ');
+
+  return `<div class="${cls}" ${rowAttrs(e)}>
+    <div class="history-item-info">
+      <span class="history-item-name">${esc(e.task_name)}${cap.kind === 'pending' ? pendingBadgeHtml(e) : ''}</span>
+      <span class="history-item-desc">${esc(e.description || '')}</span>
+      ${e.last_error ? `<span class="ec-pending-error">${esc(e.last_error)}</span>` : ''}
+    </div>
+    <span class="history-item-hours">${formatHours(e.hours || 0)}</span>
+    ${rowActionsHtml(e)}
+  </div>`;
+}
+
+/** Resolve a row element back to the entry object it was rendered from. */
+function findHistoryRowEntry(rowEl) {
+  const { todayEntries, todayPending } = store.getState();
+  const pendingId = rowEl.dataset.pendingId;
+  if (pendingId) return (todayPending || []).find(p => String(p.pending_id) === pendingId) || null;
+  const entryId = rowEl.dataset.entryId;
+  if (entryId) return (todayEntries || []).find(e => String(e.id) === entryId) || null;
+  return null;
+}
+
+function openComposerForHistoryRow(entry, action) {
+  const cap = entryCapabilities(entry);
+  const seed = {
+    date: entry.date || getHistoryDate(),
+    taskId: entry.task_id,
+    taskName: entry.task_name,
+    projectId: entry.project_id || 0,
+    projectName: entry.project_name || '',
+    description: entry.description || '',
+    durationHours: entry.hours,
+  };
+  if (action === 'duplicate') {
+    composer.open({ ...seed, mode: 'create', allowDuplicate: true, description: '' });
+  } else if (cap.kind === 'pending') {
+    composer.open({ ...seed, mode: 'repair', pendingId: entry.pending_id });
+  } else if (cap.kind === 'odoo') {
+    composer.open({ ...seed, mode: 'edit', odooId: entry.id });
+  }
+}
+
+// Row actions are delegated — #history-list is rebuilt on every setState.
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.history-item .ec-row-btn[data-ec-act]');
+  if (!btn || btn.disabled) return;
+  e.stopPropagation();
+  const rowEl = btn.closest('.history-item');
+  const entry = findHistoryRowEntry(rowEl);
+  if (!entry) return;
+  const act = btn.dataset.ecAct;
+  if (act === 'delete') {
+    if (entryCapabilities(entry).kind === 'pending') composer.deletePending(entry, rowEl);
+    else composer.deleteEntry(entry, rowEl);
+    return;
+  }
+  openComposerForHistoryRow(entry, act);
+});
+
+document.addEventListener('keydown', (e) => {
+  const row = e.target.closest?.('.history-item[tabindex]');
+  if (!row || composer.isOpen()) return;
+  const entry = findHistoryRowEntry(row);
+  if (!entry) return;
+  const cap = entryCapabilities(entry);
+  if (e.key === 'Enter' && cap.canEdit) {
+    e.preventDefault();
+    openComposerForHistoryRow(entry, 'edit');
+  } else if ((e.key === 'Delete' || e.key === 'Backspace') && cap.canDelete) {
+    e.preventDefault();
+    if (cap.kind === 'pending') composer.deletePending(entry, row);
+    else composer.deleteEntry(entry, row);
+  }
+});
+
+// Empty-state add button (rebuilt with the list, so delegated too)
+document.addEventListener('click', (e) => {
+  if (e.target.closest('#history-empty-add')) composer.open({ date: getHistoryDate() });
 });
 
 // ── Sync indicator ───────────────────────────────────────────────────
@@ -1240,6 +1407,7 @@ async function goToHistoryDate(dateStr) {
   try {
     const entries = await api.getEntriesForDate(dateStr);
     store.setState({ todayEntries: entries });
+    store.setState({ todayPending: await refreshPendingFor(dateStr) });
   } catch (_) {}
   // If entries came from cache, the indicator stays until entries_refreshed event
   // If entries came from Odoo (no cache), hide immediately
@@ -1307,6 +1475,10 @@ $('#btn-month-next')?.addEventListener('click', () => {
   store.setState({ monthYear: { year, month } });
   loadMonthView(year, month);
 });
+
+// Manual entry — scoped to the date the history view is showing, so past
+// days work with no extra step.
+$('#btn-add-entry')?.addEventListener('click', () => composer.open({ date: getHistoryDate() }));
 
 $('#btn-analyze-day')?.addEventListener('click', async () => {
   const panel = $('#analysis-panel');
@@ -1446,7 +1618,14 @@ $('#btn-sync')?.addEventListener('click', async () => {
     if (result.duplicates > 0) parts.push(`${result.duplicates} duplicates found`);
     if (result.rejected > 0) parts.push(`${result.rejected} rejected`);
     if (result.failed > 0) parts.push(`${result.failed} failed`);
-    const msg = parts.length > 0 ? parts.join(', ') : 'Nothing to sync';
+    // sync_pending returns a ZERO-FILLED result (not an error) when another
+    // sync already holds the lock, so key the message off remaining /
+    // needs_review — `synced === 0` would report "Nothing to sync" while
+    // entries are in fact still queued.
+    const stillQueued = (result.remaining || 0) + (result.needs_review || 0);
+    const msg = parts.length > 0
+      ? parts.join(', ')
+      : (stillQueued > 0 ? `${stillQueued} still queued — sync already running` : 'Nothing to sync');
     showToast(msg, result.synced > 0 ? 'success' : (result.needs_review > 0 ? 'warning' : 'info'));
     const syncStatus = await api.getSyncStatus();
     store.setState({ syncStatus });
@@ -1483,14 +1662,16 @@ async function showSyncReviewPanel() {
       return `<div class="sync-review-entry" data-entry-id="${e.id}">
         <div class="sync-review-info">
           <span class="sync-review-status ${statusClass}">${statusLabel}</span>
-          <span class="sync-review-task">${escapeHtml(e.description || 'Task #' + e.task_id)}</span>
+          <span class="sync-review-task">${escapeHtml(e.task_name || ('Task #' + e.task_id))}</span>
+          ${e.description ? `<span class="sync-review-meta">${escapeHtml(e.description)}</span>` : ''}
           <span class="sync-review-meta">${e.date} &middot; ${e.duration_hours.toFixed(2)}h</span>
-          ${e.last_error ? `<span class="sync-review-error">${escapeHtml(e.last_error.substring(0, 100))}</span>` : ''}
+          ${e.last_error ? `<span class="sync-review-error">${escapeHtml(e.last_error)}</span>` : ''}
         </div>
         <div class="sync-review-actions">
+          <button class="btn btn-sm btn-secondary" data-action="edit">Edit &amp; retry</button>
           ${e.status === 'duplicate'
             ? `<button class="btn btn-sm btn-secondary" data-action="skip">Skip (already in Odoo)</button>
-               <button class="btn btn-sm btn-primary" data-action="force">Send anyway</button>`
+               <button class="btn btn-sm btn-primary" data-action="force">Send anyway (creates a duplicate)</button>`
             : `<button class="btn btn-sm btn-primary" data-action="force">Retry</button>`}
           <button class="btn btn-sm btn-danger" data-action="discard">Discard</button>
         </div>
@@ -1506,6 +1687,28 @@ async function showSyncReviewPanel() {
         const entryEl = btn.closest('.sync-review-entry');
         const entryId = parseInt(entryEl.dataset.entryId, 10);
         const action = btn.dataset.action;
+
+        // REPAIR mode. resolve_sync_entry can only skip/force/discard — it
+        // cannot change a queued row's payload, so re-pointing a rejected
+        // "private task" entry at a different task is otherwise impossible
+        // and the row sits in the queue forever.
+        if (action === 'edit') {
+          const src = entries.find(x => x.id === entryId);
+          if (!src) return;
+          composer.open({
+            mode: 'repair',
+            pendingId: entryId,
+            date: src.date,
+            taskId: src.task_id,
+            taskName: src.task_name || `Task #${src.task_id}`,
+            projectId: src.project_id || 0,
+            projectName: src.project_name || '',
+            description: src.description || '',
+            durationHours: src.duration_hours,
+          });
+          return;
+        }
+
         try {
           await api.resolveSyncEntry(entryId, action);
           entryEl.remove();
@@ -2491,6 +2694,21 @@ async function selectCommandItem(el) {
 
 // Global keyboard shortcut
 document.addEventListener('keydown', (e) => {
+  // Composer first: while it is open it owns Escape/Enter/Tab on its own card
+  // listener (which stops propagation), so nothing below may also fire. Escape
+  // is still honoured here in case focus escaped the card.
+  if (composer.isOpen()) {
+    if (e.key === 'Escape') { e.preventDefault(); composer.requestClose(); }
+    return;
+  }
+
+  // Ctrl/Cmd+Shift+L: add a time entry for the date currently on screen
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'L' || e.key === 'l')) {
+    e.preventDefault();
+    if (store.getState().auth.authenticated) composer.open({ date: getHistoryDate() });
+    return;
+  }
+
   // Ctrl+K / Cmd+K to open
   if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
     e.preventDefault();
@@ -2827,6 +3045,9 @@ async function renderTodayQuickTasks() {
       <span class="quick-task-dot"></span>
       <span class="quick-task-name">${esc(t.task_name || 'Unknown')}</span>
       <span class="quick-task-hours">${formatHours(t.hours || 0)}</span>
+      <button type="button" class="btn-icon ec-row-btn quick-task-add" aria-label="Log time on this task" title="Log time on this task">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+      </button>
     </div>`;
   }
 
@@ -2843,6 +3064,15 @@ document.addEventListener('click', async (e) => {
   const taskName = item.dataset.taskName;
   const projectId = parseInt(item.dataset.projectId) || 0;
   const projectName = item.dataset.projectName;
+
+  // The trailing "+" logs time instead of switching the timer — the
+  // "I forgot to start the timer for that 20 minutes" path. That is about NOW,
+  // so it seeds today rather than whatever day History was last browsed to.
+  if (e.target.closest('.quick-task-add')) {
+    e.stopPropagation();
+    composer.open({ date: todayDate(), taskId, taskName, projectId, projectName });
+    return;
+  }
 
   try {
     // If timer is running, stop and auto-log

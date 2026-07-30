@@ -1872,6 +1872,9 @@ select:focus,
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  /* gap so the empty state can carry a call-to-action button under its
+     message; single-<p> usages are unaffected. */
+  gap: 10px;
   padding: 36px 16px;
   text-align: center;
 }
@@ -2151,6 +2154,7 @@ select:focus,
 .analysis-trigger {
   display: flex;
   justify-content: center;
+  gap: 6px;
   padding: 6px 0;
   flex-shrink: 0;
 }
@@ -3769,4 +3773,728 @@ select:focus,
     padding: 12px;
     min-height: 52px;
   }
+}
+
+/* ======================================================
+   ENTRY COMPOSER (.ec-*)
+   Manual timesheet entry dialog — src/entry-composer.js.
+   Lives in main.css because BOTH windows load this file.
+   Visibility class is `.open` in both windows (deliberate:
+   the tray uses `.visible` elsewhere, but this component is
+   shared and carries one convention).
+   ====================================================== */
+.ec-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 3200;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 8, 16, 0.55);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+.ec-backdrop.open {
+  display: flex;
+  animation: popupFadeIn 200ms var(--ease-out);
+}
+
+.ec-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 520px;
+  max-width: calc(100% - 40px);
+  max-height: min(88vh, 720px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  animation: popupScale 300ms var(--ease-spring);
+  overflow: hidden;
+}
+
+/* Tray window is 380x520 and non-resizable — a 440px+ card cannot fit.
+   Follows the .task-picker-card precedent exactly. */
+.ec-card.tray {
+  width: 340px;
+  max-width: calc(100% - 40px);
+  max-height: 86vh;
+}
+
+/* --- Header --- */
+.ec-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 12px 10px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.ec-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ec-destination {
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  color: var(--text-muted);
+  background: var(--surface-elevated);
+}
+
+/* No pill at all until preflight has told us where this will be written. */
+.ec-destination:empty { display: none; }
+
+.ec-destination.is-online {
+  color: var(--success);
+  background: var(--success-dim);
+}
+
+.ec-destination.is-offline {
+  color: var(--warning);
+  background: rgba(234, 179, 8, 0.12);
+}
+
+/* --- Body --- */
+.ec-body {
+  padding: 12px 16px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.ec-field { margin-bottom: 12px; }
+.ec-field:last-child { margin-bottom: 0; }
+
+.ec-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+}
+
+.ec-optional {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+  opacity: 0.7;
+}
+
+/* Scoped so it beats the bare `input[type="text"]` base (0,0,1,1). */
+.ec-card .ec-input {
+  width: 100%;
+  padding: 8px 11px;
+  font-size: 12.5px;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.ec-card .ec-input:focus {
+  border-color: var(--brand);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+.ec-card .ec-textarea {
+  resize: vertical;
+  min-height: 46px;
+  line-height: 1.45;
+}
+
+/* --- Task combobox --- */
+.ec-task-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px 7px 11px;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.ec-task-chip-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ec-project-line {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ec-project-line:empty { display: none; }
+
+.ec-recents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.ec-recents:empty { display: none; }
+
+.ec-results {
+  margin-top: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+  border-radius: var(--radius-sm);
+}
+
+.ec-results:empty { display: none; }
+
+/* Empty / searching / failed row — the three states that would otherwise all
+   render as the same blank space. */
+.ec-result-msg {
+  padding: 9px 9px 7px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.ec-result-msg.is-err { color: var(--danger); }
+
+.ec-group-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+  padding: 8px 4px 3px;
+}
+
+.ec-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  min-height: 32px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ec-result:hover { background: var(--surface-hover); }
+
+.ec-result.active {
+  background: var(--brand-dim);
+  box-shadow: inset 2px 0 0 var(--brand);
+}
+
+.ec-result-name {
+  font-size: 12px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- Date --- */
+.ec-date-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 7px;
+}
+
+.ec-date-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 5px 9px;
+  min-height: 36px;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all var(--transition);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ec-date-chip:hover { border-color: var(--border-focus); }
+
+.ec-date-chip.active {
+  background: var(--brand-dim);
+  border-color: var(--brand);
+  color: var(--text-primary);
+}
+
+.ec-date-chip-day { font-size: 11px; font-weight: 600; }
+
+.ec-date-chip-sub {
+  font-size: 9px;
+  color: var(--text-muted);
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.ec-card .ec-date {
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  /* The default theme is dark (`:root`), and without this the UA default
+     (light) applies: a dark calendar glyph on a dark field, and a white popup
+     calendar inside a dark dialog. themes.css flips it back for the light
+     theme. Same declaration .detail-date-input already carries. */
+  color-scheme: dark;
+}
+
+/* `outline: none` above outranks the global :focus-visible rule, so the field
+   would otherwise have no visible focus state at all. Matches .ec-input:focus. */
+.ec-card .ec-date:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+/* --- Duration --- */
+.ec-duration-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.ec-quick-chip {
+  padding: 4px 10px;
+  min-height: 28px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all var(--transition);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ec-quick-chip:hover {
+  color: var(--text-primary);
+  border-color: var(--brand);
+}
+
+.ec-quick-chip.is-gap {
+  color: var(--warning);
+  border-color: rgba(234, 179, 8, 0.4);
+  background: rgba(234, 179, 8, 0.08);
+}
+
+.ec-duration-echo {
+  margin-top: 6px;
+  min-height: 14px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.ec-duration-echo.is-err {
+  color: var(--danger);
+  font-family: inherit;
+}
+
+/* --- Checks strip (pinned above the footer, never scrolled away) --- */
+.ec-checks {
+  flex-shrink: 0;
+  padding: 9px 16px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--base);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 210px;
+  overflow-y: auto;
+  transition: opacity var(--transition);
+}
+
+.ec-checks.is-busy { opacity: 0.6; }
+
+.ec-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.ec-check-dot {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  margin-top: 1px;
+  border-radius: var(--radius-round);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Colour is ALWAYS paired with a distinct glyph so the strip still reads
+   under [data-theme="colorblind"], where success->blue and danger->orange. */
+.ec-check.ok   .ec-check-dot { background: var(--success-dim); color: var(--success); }
+.ec-check.warn .ec-check-dot { background: rgba(234, 179, 8, 0.15); color: var(--warning); }
+.ec-check.err  .ec-check-dot { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
+.ec-check.muted .ec-check-dot { background: var(--surface-elevated); color: var(--text-muted); }
+
+.ec-check.err .ec-check-text { color: var(--danger); }
+.ec-check-text strong { color: var(--text-primary); font-weight: 600; }
+
+.ec-dup {
+  margin-top: 5px;
+  padding: 7px 9px;
+  background: var(--surface-elevated);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+}
+
+.ec-dup-line {
+  font-size: 11px;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+  word-break: break-word;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.ec-dup-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* --- Rejection recovery --- */
+.ec-error-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.ec-error-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--danger);
+}
+
+/* A fault you cannot copy is a support ticket you cannot file — this overrides
+   the global `body { user-select: none }`, which is never otherwise re-enabled. */
+.ec-error-text {
+  user-select: text;
+  -webkit-user-select: text;
+  font-size: 10.5px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.ec-error-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* --- Discard confirmation bar --- */
+.ec-discard {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  background: var(--surface-elevated);
+  border-top: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.ec-discard span { flex: 1; }
+
+/* --- Footer --- */
+.ec-footer {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+.ec-footer-spacer { flex: 1; }
+
+/* .btn has no disabled state anywhere in the project, so the primary CTA would
+   look and feel identical whether it is live, inert or mid-save — and it is
+   disabled from the moment the dialog opens until a task and a valid duration
+   are both entered. Scoped to the composer rather than changing .btn globally. */
+.ec-card .btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.ec-card .btn:disabled:hover { transform: none; }
+.ec-card .btn-primary:disabled::before { content: none; }
+
+/* Submit goes .is-loading synchronously before the await; an Odoo round trip
+   takes seconds and produced no feedback at all without this. */
+.ec-card .btn.is-loading {
+  position: relative;
+  color: transparent;
+}
+
+.ec-card .btn.is-loading::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: sync-spin 0.8s linear infinite;
+}
+
+/* The tray window is 380px wide and non-resizable: three footer buttons do
+   not fit on one 340px row, so they wrap right-aligned instead of overflowing
+   horizontally (the tray must never scroll sideways). */
+.ec-card.tray .ec-footer {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.ec-card.tray .ec-footer-spacer { display: none; }
+
+.ec-card.tray .ec-destination {
+  max-width: 108px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ======================================================
+   DAY-LIST ROW ACTIONS + PENDING ROWS
+   ====================================================== */
+.ec-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity var(--transition);
+}
+
+.timelog-entry:hover .ec-row-actions,
+.timelog-entry:focus-within .ec-row-actions,
+.history-item:hover .ec-row-actions,
+.history-item:focus-within .ec-row-actions {
+  opacity: 1;
+}
+
+/* Two-class scope so this beats dashboard.css's 30x30 .btn-icon, which is
+   loaded after main.css and would otherwise win at equal specificity. */
+.timelog-entry .ec-row-btn,
+.history-item .ec-row-btn,
+.quick-task-item .ec-row-btn {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  padding: 0;
+}
+
+.ec-row-btn[disabled] { opacity: 0.35; cursor: not-allowed; }
+.ec-row-btn-danger:hover { color: var(--danger); }
+
+/* A pending row carries an error line on its own row, so it must wrap. */
+.timelog-entry.is-pending { flex-wrap: wrap; }
+.timelog-entry .ec-pending-error { flex-basis: 100%; }
+
+/* Always visible on touch — hover does not exist there. */
+@media (hover: none) {
+  .ec-row-actions { opacity: 1; }
+}
+
+.timelog-entry.is-readonly,
+.history-item.is-readonly { opacity: 0.7; }
+
+.timelog-entry.is-pending,
+.history-item.is-pending {
+  border-left: 2px solid var(--warning);
+  background: rgba(234, 179, 8, 0.05);
+}
+
+.pending-badge {
+  display: inline-block;
+  flex-shrink: 0;
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+
+.pending-badge.is-warn { color: var(--warning); background: rgba(234, 179, 8, 0.14); }
+.pending-badge.is-err  { color: var(--danger); background: rgba(239, 68, 68, 0.14); }
+
+/* Queued hours are shown as their own figure and NEVER summed into the
+   Odoo total — two distinct numbers, honest about what the employer sees. */
+.ec-queued-note {
+  font-size: 10px;
+  color: var(--warning);
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.ec-pending-error {
+  display: block;
+  font-size: 9.5px;
+  color: var(--danger);
+  opacity: 0.85;
+  word-break: break-word;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* --- Row transitions --- */
+.timelog-entry.just-added,
+.history-item.just-added {
+  animation: slideUp 220ms var(--ease-out);
+  background: var(--brand-dim);
+}
+
+.timelog-entry.removing,
+.history-item.removing {
+  opacity: 0;
+  transform: scale(0.97);
+  transition: opacity 160ms var(--ease-out), transform 160ms var(--ease-out);
+  pointer-events: none;
+}
+
+.ec-shake { animation: ecShake 400ms var(--ease-out); }
+
+@keyframes ecShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(3px); }
+}
+
+/* --- Undo toast --- */
+.ec-undo-toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 340px;
+  overflow: hidden;
+  /* Above .ec-backdrop (3200) — a delete can be triggered while the composer
+     is open, and a toast the user cannot see is a toast they cannot undo. */
+  z-index: 3300;
+}
+
+/* The dashboard relocates its own toast to the bottom (#dashboard-toast in
+   dashboard.css); without this the undo lands top-centre and the "Restored
+   as #N" confirmation that follows it lands bottom-centre. */
+.ec-undo-toast.is-dashboard {
+  top: auto;
+  bottom: 24px;
+}
+
+.ec-undo-msg {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ec-undo-btn { flex-shrink: 0; }
+
+.toast-countdown {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 100%;
+  background: var(--warning);
+  transform-origin: left center;
+  animation: ecCountdown 10s linear forwards;
+}
+
+@keyframes ecCountdown {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+
+/* --- Composer: mobile / narrow bottom sheet --- */
+/* Width is deliberately NOT touched here, matching the .task-picker-card
+   precedent: the tray window is a fixed 380px, so this block is always active
+   there, and forcing width:100% would both edge-to-edge the sheet and make the
+   .ec-card.tray sizing above dead code. `max-width: calc(100% - 40px)` from the
+   base rules keeps the side margin at every width. */
+@media (max-width: 500px) {
+  .ec-backdrop.open { align-items: flex-end; }
+
+  .ec-card {
+    max-height: 88vh;
+    border-radius: 16px 16px 0 0;
+    margin-top: auto;
+  }
+}
+
+/* The project has no prefers-reduced-motion rules at all; this one is scoped
+   to the composer and the undo countdown it introduces. */
+@media (prefers-reduced-motion: reduce) {
+  .ec-backdrop.open,
+  .ec-card {
+    animation: none;
+  }
+
+  .timelog-entry.just-added,
+  .history-item.just-added,
+  .ec-shake {
+    animation: none;
+  }
+
+  .timelog-entry.removing,
+  .history-item.removing {
+    transition: none;
+  }
+
+  .toast-countdown { animation: none; transform: scaleX(1); }
 }

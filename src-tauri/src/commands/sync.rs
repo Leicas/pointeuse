@@ -256,29 +256,38 @@ async fn do_sync(
     })
 }
 
-/// Find a duplicate among existing Odoo entries.
+/// Whether an existing Odoo line looks like a duplicate of (task_id, date, hours).
 /// Match criteria: same task_id, same date, hours within tolerance.
+/// Shared with the manual-entry preflight so the two can never diverge.
+pub(crate) fn is_duplicate_match(
+    task_id: i64,
+    date: &str,
+    hours: f64,
+    odoo: &crate::odoo::models::OdooTimesheetEntry,
+) -> bool {
+    let task_matches = odoo.task_id.as_ref().is_some_and(|(id, _)| *id == task_id);
+    let date_matches = odoo.date == date;
+    let hours_match = (odoo.unit_amount - hours).abs() < HOURS_TOLERANCE;
+    task_matches && date_matches && hours_match
+}
+
+/// Find a duplicate among existing Odoo entries.
 fn find_duplicate(
     entry: &PendingTimesheet,
     odoo_entries: &[crate::odoo::models::OdooTimesheetEntry],
 ) -> Option<crate::odoo::models::OdooTimesheetEntry> {
-    for odoo in odoo_entries {
-        let task_matches = odoo
-            .task_id
-            .as_ref()
-            .is_some_and(|(id, _)| *id == entry.task_id);
-        let date_matches = odoo.date == entry.date;
-        let hours_match = (odoo.unit_amount - entry.duration_hours).abs() < HOURS_TOLERANCE;
-
-        if task_matches && date_matches && hours_match {
-            return Some(odoo.clone());
-        }
+    // The user explicitly said this is a second block, not a duplicate.
+    if entry.allow_duplicate {
+        return None;
     }
-    None
+    odoo_entries
+        .iter()
+        .find(|odoo| is_duplicate_match(entry.task_id, &entry.date, entry.duration_hours, odoo))
+        .cloned()
 }
 
 /// Check whether an Odoo error is permanent (non-retryable).
-fn is_permanent_error(error_msg: &str) -> bool {
+pub(crate) fn is_permanent_error(error_msg: &str) -> bool {
     let msg = error_msg.to_lowercase();
     let permanent_indicators = [
         "private task",

@@ -1,6 +1,11 @@
 // Pointeuse — Dashboard Window
 // Standalone JS for the dashboard kanban/detail view
 
+import {
+  createEntryComposer, reconcileEntries, entryCapabilities,
+  rowActionsHtml, rowAttrs, pendingBadgeHtml, pendingToRow,
+} from './entry-composer.js';
+
 // ── Tauri Invoke ─────────────────────────────────────────────────────
 
 function getInvoke() {
@@ -56,9 +61,11 @@ const store = createStore({
   // Time log state
   timelogDate: null,       // YYYY-MM-DD, null = today
   timelogMode: 'day',      // 'day' | 'week' | 'month'
-  timelogEntries: [],      // entries for current date
+  timelogEntries: [],      // entries for current date (Odoo/cache/local)
+  timelogPending: [],      // queued rows for current date, rendered separately
   timelogMonthly: null,    // { days: [...], total_hours }
   timelogAnalysis: null,   // day analysis result
+  justAddedKey: null,      // "<task_id>|<hours>" — flashes once after a create
   // All-tasks section state
   allTasksData: [],            // tasks fetched via get_all_tasks
   allTasksUsers: [],           // [{id, name}] from get_all_users
@@ -95,6 +102,18 @@ const api = {
   getDayAnalysis: (date) => invoke('get_day_analysis', { date }),
   getAllTasks: (projectIds, userIds) => invoke('get_all_tasks', { projectIds: projectIds || [], userIds: userIds || [] }),
   getAllUsers: () => invoke('get_all_users'),
+  // Manual timesheet entry
+  preflightManualEntry: (taskId, projectId, durationHours, date, excludeOdooId) =>
+    invoke('preflight_manual_entry', { taskId, projectId, durationHours, date, excludeOdooId: excludeOdooId ?? null }),
+  createManualEntry: (taskId, projectId, taskName, projectName, description, durationHours, date, allowDuplicate) =>
+    invoke('create_manual_entry', { taskId, projectId, taskName, projectName, description, durationHours, date, allowDuplicate }),
+  updateTimesheetEntry: (odooId, taskId, projectId, taskName, projectName, description, durationHours, date, originalDate) =>
+    invoke('update_timesheet_entry', { odooId, taskId, projectId, taskName, projectName, description, durationHours, date, originalDate }),
+  deleteTimesheetEntry: (odooId, taskId, date) => invoke('delete_timesheet_entry', { odooId, taskId, date }),
+  updatePendingEntry: (entryId, taskId, projectId, taskName, projectName, description, durationHours, date, allowDuplicate) =>
+    invoke('update_pending_entry', { entryId, taskId, projectId, taskName, projectName, description, durationHours, date, allowDuplicate }),
+  getPendingForDate: (date) => invoke('get_pending_for_date', { date }),
+  getDefaultTask: () => invoke('get_default_task'),
 };
 
 // Odoo URL cache for "Open in Odoo" links
@@ -232,6 +251,34 @@ function showToast(msg, type = 'error') {
   toastTimeout = setTimeout(() => el.classList.remove('visible'), 4000);
 }
 
+// ── Manual entry composer ────────────────────────────────────────────
+
+const composer = createEntryComposer({
+  invoke,
+  showToast,
+  variant: 'dashboard',
+  getViewedDate: () => getTimelogDate(),
+  onChanged: (date, info) => {
+    // Flash the new row once it lands in the authoritative list.
+    if (info && (info.outcome === 'created' || info.outcome === 'restored') && info.entry) {
+      store.setState({ justAddedKey: `${info.entry.task_id || 0}|${(info.entry.hours || 0).toFixed(2)}` });
+    }
+    // fetchWeekContext short-circuits when timelogWeek already covers the
+    // requested week, so the week chart stays stale unless we clear it.
+    store.setState({ timelogWeek: [] });
+    // #main-area is shared by every section and renderTimeLog() has no section
+    // guard of its own, so navigating from e.g. the task detail panel would
+    // replace the board the user is looking at. Same rule refreshTodayEntries
+    // already applies below.
+    if (store.getState().activeSection === 'timelog') {
+      // If the entry moved days, the backend refreshes BOTH dates and we
+      // navigate to the new one, so the old day is re-fetched when next viewed.
+      goToTimelogDate(date);
+    }
+    refreshTodayEntries();
+  },
+});
+
 // ── Titlebar ──────────────────────────────────────────────────────────
 
 $('.titlebar')?.addEventListener('mousedown', async (e) => {
@@ -305,6 +352,14 @@ document.addEventListener('click', (e) => {
   const section = item.dataset.section;
   $$('.sidebar-item').forEach(el => el.classList.toggle('active', el.dataset.section === section));
   store.setState({ activeSection: section });
+  // Relabel only the trailing text node — the button also contains an <svg>
+  // icon that textContent would destroy.
+  const newBtn = $('#btn-new-task');
+  if (newBtn) {
+    const label = section === 'timelog' ? 'New entry' : 'New Task';
+    const textNode = Array.from(newBtn.childNodes).find(n => n.nodeType === Node.TEXT_NODE && n.textContent.trim());
+    if (textNode) textNode.textContent = ` ${label} `;
+  }
   if (section === 'timelog') {
     goToTimelogDate(getTimelogDate());
   } else if (section === 'all-tasks') {
@@ -1215,7 +1270,10 @@ function renderDetailPanel() {
       </div>
 
       <div class="detail-section">
-        <h4>Today's Time</h4>
+        <div class="detail-section-head">
+          <h4>Today's Time</h4>
+          <button class="btn btn-sm btn-secondary" id="detail-log-time" title="Log time on this task">Log time</button>
+        </div>
         ${taskEntries.length > 0
           ? `<div class="detail-time-entries">
               ${taskEntries.map(e => `
@@ -1402,6 +1460,21 @@ function attachDetailListeners() {
     descEl.addEventListener('blur', debouncedSave);
   }
 
+  // Log time on this task — task and project are already known, so the
+  // composer opens focused on DURATION. The section is titled "Today's Time",
+  // so it seeds TODAY, not whatever day the Time Log was last left on.
+  $('#detail-log-time')?.addEventListener('click', () => {
+    const { detailTask } = store.getState();
+    if (!detailTask) return;
+    composer.open({
+      date: todayDate(),
+      taskId: detailTask.id,
+      taskName: detailTask.name,
+      projectId: detailTask.project_id || 0,
+      projectName: detailTask.project_name || '',
+    });
+  });
+
   // Start Timer
   $('#detail-start-timer')?.addEventListener('click', async () => {
     const btn = $('#detail-start-timer');
@@ -1479,14 +1552,29 @@ function hideTimelogSyncIndicator() {
   if (el) el.style.display = 'none';
 }
 
+/** Queued rows for a date, fetched additively — get_entries_for_date never
+ *  consults pending_timesheets, so this is a second, separate request. */
+async function refreshPendingFor(dateStr) {
+  try {
+    const pending = await api.getPendingForDate(dateStr);
+    return (pending || []).map(pendingToRow);
+  } catch (_) { return []; }
+}
+
 async function goToTimelogDate(dateStr) {
   store.setState({ timelogDate: dateStr, timelogMode: 'day', timelogAnalysis: null });
   showTimelogSyncIndicator();
   try {
-    const entries = await api.getEntriesForDate(dateStr);
-    store.setState({ timelogEntries: entries || [] });
+    const [entries, pending] = await Promise.all([
+      api.getEntriesForDate(dateStr),
+      refreshPendingFor(dateStr),
+    ]);
+    const rows = entries || [];
+    // Drop any queued row already represented upstream, or the day
+    // double-counts for one refresh cycle.
+    store.setState({ timelogEntries: rows, timelogPending: reconcileEntries(rows, pending) });
   } catch (err) {
-    store.setState({ timelogEntries: [] });
+    store.setState({ timelogEntries: [], timelogPending: [] });
     showToast('Failed to load entries: ' + String(err));
   }
   hideTimelogSyncIndicator();
@@ -1591,10 +1679,13 @@ function renderTimeLog() {
 }
 
 function renderTimeLogDay(mainEl) {
-  const { timelogEntries, timelogAnalysis, timelogWeek } = store.getState();
+  const { timelogEntries, timelogAnalysis, timelogWeek, timelogPending } = store.getState();
   const date = getTimelogDate();
   const entries = timelogEntries || [];
+  const pending = timelogPending || [];
+  // Queued hours are NEVER summed into the Odoo total — two distinct numbers.
   const totalHours = entries.reduce((sum, e) => sum + (e.hours || 0), 0);
+  const pendingHours = pending.reduce((sum, e) => sum + (e.hours || 0), 0);
   const weekData = timelogWeek || [];
 
   let html = `
@@ -1615,6 +1706,10 @@ function renderTimeLogDay(mainEl) {
       <button class="timelog-tab" data-tl-mode="week">Week</button>
       <button class="timelog-tab" data-tl-mode="month">Month</button>
       <div style="flex:1"></div>
+      <button class="btn btn-sm btn-primary" id="tl-add-entry" title="Add a manual time entry (A)">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+        Add entry
+      </button>
       <button class="btn btn-sm btn-secondary" id="tl-analyze">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M21 3v6h-6"/></svg>
         Analyze
@@ -1643,7 +1738,7 @@ function renderTimeLogDay(mainEl) {
   }
 
   html += `<div class="timelog-total">
-      <span>Day Total</span>
+      <span>Day Total${pendingHours > 0 ? ` <span class="ec-queued-note">+${esc(formatHours(pendingHours))} queued</span>` : ''}</span>
       <span class="timelog-total-value">${formatHours(totalHours)}</span>
     </div>`;
 
@@ -1687,8 +1782,11 @@ function renderTimeLogDay(mainEl) {
   }
 
   html += '<div class="timelog-list">';
-  if (entries.length === 0) {
-    html += '<div class="dash-empty"><p>No time entries for this day</p></div>';
+  if (entries.length === 0 && pending.length === 0) {
+    html += `<div class="dash-empty">
+      <p>No time entries for this day</p>
+      <button class="btn btn-sm btn-primary" id="tl-empty-add">Add entry</button>
+    </div>`;
   } else {
     // Group by project
     const groups = {};
@@ -1701,16 +1799,42 @@ function renderTimeLogDay(mainEl) {
     for (const [proj, group] of Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0]))) {
       html += `<div style="margin-bottom:4px;font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;padding:8px 0 2px">${esc(proj)} · ${formatHours(group.total)}</div>`;
       for (const e of group.entries) {
-        html += `<div class="timelog-entry">
-          <span class="timelog-task-name">${esc(e.task_name)}${e.description ? ' — ' + esc(e.description) : ''}</span>
-          <span class="timelog-duration">${formatHours(e.hours || 0)}</span>
-        </div>`;
+        html += renderTimelogEntryRow(e);
       }
+    }
+    if (pending.length > 0) {
+      html += `<div style="margin-bottom:4px;font-size:11px;color:var(--warning);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;padding:8px 0 2px">Queued · ${formatHours(pendingHours)}</div>`;
+      for (const p of pending) html += renderTimelogEntryRow(p);
     }
   }
   html += '</div>';
   mainEl.innerHTML = html;
   attachTimelogListeners();
+  // The flash is one-shot: consume the key so a later re-render is quiet.
+  if (store.getState().justAddedKey) store.setState({ justAddedKey: null });
+}
+
+/** One day-list row, with actions gated on `source` (see entryCapabilities). */
+function renderTimelogEntryRow(e) {
+  const cap = entryCapabilities(e);
+  const { justAddedKey } = store.getState();
+  const key = `${e.task_id || 0}|${(e.hours || 0).toFixed(2)}`;
+  const cls = [
+    'timelog-entry',
+    cap.kind === 'pending' ? 'is-pending' : '',
+    cap.kind === 'local' ? 'is-readonly' : '',
+    justAddedKey && justAddedKey === key ? 'just-added' : '',
+  ].filter(Boolean).join(' ');
+
+  // The badge and the error are SIBLINGS of .timelog-task-name, never children:
+  // that span is `white-space: nowrap` + ellipsis, so nested content is clipped.
+  return `<div class="${cls}" ${rowAttrs(e)}>
+    <span class="timelog-task-name">${esc(e.task_name)}${e.description ? ' — ' + esc(e.description) : ''}</span>
+    ${cap.kind === 'pending' ? pendingBadgeHtml(e) : ''}
+    <span class="timelog-duration">${formatHours(e.hours || 0)}</span>
+    ${rowActionsHtml(e)}
+    ${e.last_error ? `<span class="ec-pending-error">${esc(e.last_error)}</span>` : ''}
+  </div>`;
 }
 
 function renderTimeLogWeek(mainEl) {
@@ -1851,6 +1975,10 @@ function attachTimelogListeners() {
   document.querySelectorAll('[data-tl-goto]').forEach(el => {
     el.addEventListener('click', () => goToTimelogDate(el.dataset.tlGoto));
   });
+  // Manual entry — inherits the date currently on screen, which is exactly
+  // what makes logging a past day a no-extra-step operation.
+  $('#tl-add-entry')?.addEventListener('click', () => composer.open({ date: getTimelogDate() }));
+  $('#tl-empty-add')?.addEventListener('click', () => composer.open({ date: getTimelogDate() }));
   // Analyze day
   $('#tl-analyze')?.addEventListener('click', analyzeDay);
   // Apply suggestion (log time)
@@ -1876,12 +2004,89 @@ function attachTimelogListeners() {
   });
 }
 
+// ── Day-list row actions (delegated: #main-area is re-rendered wholesale) ──
+
+/** Resolve the row element back to the entry object it was rendered from. */
+function findRowEntry(rowEl) {
+  const { timelogEntries, timelogPending } = store.getState();
+  const pendingId = rowEl.dataset.pendingId;
+  if (pendingId) {
+    return (timelogPending || []).find(p => String(p.pending_id) === pendingId) || null;
+  }
+  const entryId = rowEl.dataset.entryId;
+  if (entryId) {
+    return (timelogEntries || []).find(e => String(e.id) === entryId) || null;
+  }
+  return null;
+}
+
+function openComposerForRow(entry, action) {
+  const cap = entryCapabilities(entry);
+  const seed = {
+    date: entry.date,
+    taskId: entry.task_id,
+    taskName: entry.task_name,
+    projectId: entry.project_id || 0,
+    projectName: entry.project_name || '',
+    description: entry.description || '',
+    durationHours: entry.hours,
+  };
+  if (action === 'duplicate') {
+    // Intent is unambiguous, so the duplicate check is pre-acknowledged.
+    composer.open({ ...seed, mode: 'create', allowDuplicate: true, description: '' });
+    return;
+  }
+  if (cap.kind === 'pending') {
+    composer.open({ ...seed, mode: 'repair', pendingId: entry.pending_id });
+  } else if (cap.kind === 'odoo') {
+    composer.open({ ...seed, mode: 'edit', odooId: entry.id });
+  }
+}
+
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.timelog-entry .ec-row-btn[data-ec-act]');
+  if (!btn || btn.disabled) return;
+  e.stopPropagation();
+  const rowEl = btn.closest('.timelog-entry');
+  const entry = findRowEntry(rowEl);
+  if (!entry) return;
+  const act = btn.dataset.ecAct;
+  if (act === 'delete') {
+    if (entryCapabilities(entry).kind === 'pending') composer.deletePending(entry, rowEl);
+    else composer.deleteEntry(entry, rowEl);
+    return;
+  }
+  openComposerForRow(entry, act);
+});
+
+document.addEventListener('keydown', (e) => {
+  const row = e.target.closest?.('.timelog-entry[tabindex]');
+  if (!row || composer.isOpen()) return;
+  const entry = findRowEntry(row);
+  if (!entry) return;
+  const cap = entryCapabilities(entry);
+  if (e.key === 'Enter' && cap.canEdit) {
+    e.preventDefault();
+    openComposerForRow(entry, 'edit');
+  } else if ((e.key === 'Delete' || e.key === 'Backspace') && cap.canDelete) {
+    e.preventDefault();
+    if (cap.kind === 'pending') composer.deletePending(entry, row);
+    else composer.deleteEntry(entry, row);
+  }
+});
+
 // ── New Task ─────────────────────────────────────────────────────────
 
 let newTaskFormOpen = false;
 let newTaskDraft = null;
 
 $('#btn-new-task')?.addEventListener('click', () => {
+  // The toolbar's New Task button is irrelevant on the Time Log screen, so it
+  // re-targets there instead of sitting inert.
+  if (store.getState().activeSection === 'timelog') {
+    composer.open({ date: getTimelogDate() });
+    return;
+  }
   toggleNewTaskForm();
 });
 
@@ -2231,6 +2436,21 @@ $('#cmd-palette')?.addEventListener('click', closeCommandPalette);
 // ── Keyboard Shortcuts ───────────────────────────────────────────────
 
 document.addEventListener('keydown', (e) => {
+  // Composer first: it owns Escape/Enter/Tab while open (handled on its own
+  // card listener, which stops propagation), so the rest of this cascade must
+  // not also fire. Escape is still honoured here in case focus escaped the card.
+  if (composer.isOpen()) {
+    if (e.key === 'Escape') { e.preventDefault(); composer.requestClose(); }
+    return;
+  }
+
+  // Ctrl/Cmd+Shift+L: open the composer for the date currently on screen
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'L' || e.key === 'l')) {
+    e.preventDefault();
+    composer.open({ date: getTimelogDate() });
+    return;
+  }
+
   // Ctrl+K: command palette
   if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
     e.preventDefault();
@@ -2289,10 +2509,20 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
+  const active = document.activeElement;
+  const isTyping = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT');
+
+  // A: add a time entry, mirroring the bare-'r' idiom
+  if ((e.key === 'a' || e.key === 'A') && !isTyping && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (store.getState().activeSection === 'timelog') {
+      e.preventDefault();
+      composer.open({ date: getTimelogDate() });
+      return;
+    }
+  }
+
   // R: Refresh (only when not typing in an input)
   if (e.key === 'r' || e.key === 'R') {
-    const active = document.activeElement;
-    const isTyping = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT');
     if (!isTyping && !e.ctrlKey && !e.metaKey) {
       e.preventDefault();
       refreshTasks();
@@ -2381,12 +2611,34 @@ try {
   window.__TAURI__?.event?.listen('entries_refreshed', (event) => {
     const { date, entries } = event.payload;
     const currentDate = getTimelogDate();
-    const { timelogMode } = store.getState();
+    const { timelogMode, timelogPending } = store.getState();
     if (timelogMode === 'day' && date === currentDate) {
-      store.setState({ timelogEntries: entries || [] });
+      const rows = entries || [];
+      // entries_refreshed is the authoritative reconciliation signal: any
+      // queued row now represented upstream must be dropped here.
+      store.setState({
+        timelogEntries: rows,
+        timelogPending: reconcileEntries(rows, timelogPending || []),
+      });
       renderTimeLog();
     }
     hideTimelogSyncIndicator();
+  });
+
+  // ledger_changed fires synchronously at the end of every mutation, one
+  // network round-trip BEFORE entries_refreshed — it lets the other window
+  // react instantly rather than waiting on the Odoo re-fetch.
+  window.__TAURI__?.event?.listen('ledger_changed', async (event) => {
+    const p = event.payload || {};
+    const currentDate = getTimelogDate();
+    if (store.getState().timelogMode !== 'day') return;
+    if (p.date && p.date !== currentDate) return;
+    const pending = await refreshPendingFor(currentDate);
+    store.setState({
+      timelogPending: reconcileEntries(store.getState().timelogEntries || [], pending),
+      timelogWeek: [],
+    });
+    renderTimeLog();
   });
   window.__TAURI__?.event?.listen('monthly_refreshed', (event) => {
     const summary = event.payload;

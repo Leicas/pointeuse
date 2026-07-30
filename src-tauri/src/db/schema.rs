@@ -173,6 +173,20 @@ pub fn initialize_database(app_data_dir: &Path) -> AppResult<Connection> {
         )?;
     }
 
+    // Migration 006: Manual timesheet entries — duplicate bypass + denormalised names
+    let has_allow_duplicate: bool = conn
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('pending_timesheets') WHERE name='allow_duplicate'")
+        .and_then(|mut s| s.query_row([], |r| r.get::<_, i64>(0)))
+        .unwrap_or(0)
+        > 0;
+    if !has_allow_duplicate {
+        conn.execute_batch(
+            "ALTER TABLE pending_timesheets ADD COLUMN allow_duplicate INTEGER NOT NULL DEFAULT 0;
+             ALTER TABLE pending_timesheets ADD COLUMN task_name TEXT NOT NULL DEFAULT '';
+             ALTER TABLE pending_timesheets ADD COLUMN project_name TEXT NOT NULL DEFAULT '';",
+        )?;
+    }
+
     info!("Database migrations applied successfully");
 
     Ok(conn)

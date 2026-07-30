@@ -264,6 +264,17 @@ impl OdooClient {
         Ok(result.as_bool().unwrap_or(false))
     }
 
+    /// Delete records. Odoo returns `true` when the unlink succeeded.
+    pub async fn unlink(&self, model: &str, ids: Vec<i64>) -> AppResult<bool> {
+        let id_vals: Vec<XmlRpcValue> = ids.into_iter().map(XmlRpcValue::Int).collect();
+
+        let result = self
+            .execute_kw(model, "unlink", vec![XmlRpcValue::Array(id_vals)], None)
+            .await?;
+
+        Ok(result.as_bool().unwrap_or(false))
+    }
+
     // -----------------------------------------------------------------------
     // Domain-specific methods
     // -----------------------------------------------------------------------
@@ -654,6 +665,57 @@ impl OdooClient {
 
         log::info!("Logged {hours}h on task {task_id} (line_id={line_id})");
         Ok(line_id)
+    }
+
+    /// Create a timesheet line for the manual-entry path.
+    ///
+    /// Same value map as `log_time`, but the `project.task` recompute that follows
+    /// is treated as a best-effort step: the line already exists at that point, so
+    /// reporting the recompute failure as an error would make the caller retry and
+    /// create a genuine duplicate in Odoo.
+    pub async fn create_timesheet_line(
+        &self,
+        task_id: i64,
+        project_id: i64,
+        description: &str,
+        hours: f64,
+        date: &str,
+    ) -> AppResult<i64> {
+        let mut values = HashMap::new();
+        values.insert("name".into(), XmlRpcValue::String(description.into()));
+        values.insert("task_id".into(), XmlRpcValue::Int(task_id));
+        values.insert("project_id".into(), XmlRpcValue::Int(project_id));
+        values.insert("unit_amount".into(), XmlRpcValue::Double(hours));
+        values.insert("date".into(), XmlRpcValue::String(date.into()));
+
+        if let Some(eid) = self.employee_id {
+            values.insert("employee_id".into(), XmlRpcValue::Int(eid));
+        }
+
+        let line_id = self.create("account.analytic.line", values).await?;
+
+        self.recompute_task(task_id).await;
+
+        log::info!("Created timesheet line {line_id} ({hours}h on task {task_id})");
+        Ok(line_id)
+    }
+
+    /// Update an existing `account.analytic.line`.
+    pub async fn update_timesheet_line(
+        &self,
+        line_id: i64,
+        values: HashMap<String, XmlRpcValue>,
+    ) -> AppResult<bool> {
+        self.write("account.analytic.line", vec![line_id], values)
+            .await
+    }
+
+    /// Write an empty dict to a task so Odoo recomputes `effective_hours`.
+    /// Never fatal — a stale progress bar is not worth failing a write that landed.
+    pub async fn recompute_task(&self, task_id: i64) {
+        if let Err(e) = self.write("project.task", vec![task_id], HashMap::new()).await {
+            log::warn!("recompute_task: effective_hours recompute failed for task {task_id}: {e}");
+        }
     }
 
     // -----------------------------------------------------------------------

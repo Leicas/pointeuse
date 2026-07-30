@@ -20,6 +20,36 @@ pub struct PendingTimesheet {
     pub last_error: Option<String>,
     pub last_attempt_at: Option<String>,
     pub created_at: String,
+    pub task_name: String,
+    pub project_name: String,
+    /// When true, the sync drain skips duplicate detection for this row.
+    pub allow_duplicate: bool,
+}
+
+/// Column list shared by every SELECT that builds a `PendingTimesheet`.
+const PENDING_COLUMNS: &str = "id, task_id, project_id, description, duration_hours, date,
+     status, odoo_id, retry_count, last_error, last_attempt_at, created_at,
+     task_name, project_name, allow_duplicate";
+
+/// Build a `PendingTimesheet` from a row selected with `PENDING_COLUMNS`.
+fn row_to_pending(row: &rusqlite::Row) -> rusqlite::Result<PendingTimesheet> {
+    Ok(PendingTimesheet {
+        id: row.get(0)?,
+        task_id: row.get(1)?,
+        project_id: row.get(2)?,
+        description: row.get(3)?,
+        duration_hours: row.get(4)?,
+        date: row.get(5)?,
+        status: row.get(6)?,
+        odoo_id: row.get(7)?,
+        retry_count: row.get(8)?,
+        last_error: row.get(9)?,
+        last_attempt_at: row.get(10)?,
+        created_at: row.get(11)?,
+        task_name: row.get(12)?,
+        project_name: row.get(13)?,
+        allow_duplicate: row.get::<_, i64>(14)? != 0,
+    })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,52 +68,118 @@ pub struct TimesheetLogEntry {
 // ── Pending queue ────────────────────────────────────────────────────
 
 /// Insert a new pending timesheet and return its row id.
+///
+/// `task_name` / `project_name` are denormalised so the review UI can show
+/// readable labels while offline; pass `""` when the caller does not know them.
+/// `allow_duplicate` makes the sync drain skip duplicate detection for this row.
+#[allow(clippy::too_many_arguments)]
 pub fn queue_timesheet(
     conn: &Connection,
     task_id: i64,
     project_id: i64,
+    task_name: &str,
+    project_name: &str,
     description: &str,
     duration_hours: f64,
     date: &str,
+    allow_duplicate: bool,
 ) -> AppResult<i64> {
     conn.execute(
-        "INSERT INTO pending_timesheets (task_id, project_id, description, duration_hours, date)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![task_id, project_id, description, duration_hours, date],
+        "INSERT INTO pending_timesheets
+            (task_id, project_id, task_name, project_name, description, duration_hours, date, allow_duplicate)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![
+            task_id,
+            project_id,
+            task_name,
+            project_name,
+            description,
+            duration_hours,
+            date,
+            allow_duplicate as i64
+        ],
     )?;
     Ok(conn.last_insert_rowid())
 }
 
 /// Return all timesheets that have not yet been synced.
 pub fn get_pending_timesheets(conn: &Connection) -> AppResult<Vec<PendingTimesheet>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, task_id, project_id, description, duration_hours, date,
-                status, odoo_id, retry_count, last_error, last_attempt_at, created_at
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {PENDING_COLUMNS}
          FROM pending_timesheets
-         ORDER BY created_at ASC",
-    )?;
-    let rows = stmt.query_map([], |row| {
-        Ok(PendingTimesheet {
-            id: row.get(0)?,
-            task_id: row.get(1)?,
-            project_id: row.get(2)?,
-            description: row.get(3)?,
-            duration_hours: row.get(4)?,
-            date: row.get(5)?,
-            status: row.get(6)?,
-            odoo_id: row.get(7)?,
-            retry_count: row.get(8)?,
-            last_error: row.get(9)?,
-            last_attempt_at: row.get(10)?,
-            created_at: row.get(11)?,
-        })
-    })?;
+         ORDER BY created_at ASC"
+    ))?;
+    let rows = stmt.query_map([], row_to_pending)?;
 
     let mut results = Vec::new();
     for row in rows {
         results.push(row?);
     }
     Ok(results)
+}
+
+/// Return the queued (not-yet-synced) entries for a single date.
+/// Excludes 'synced' rows so a row that just drained disappears from the day
+/// list the moment the real Odoo line lands in the entry cache.
+pub fn get_pending_for_date(conn: &Connection, date: &str) -> AppResult<Vec<PendingTimesheet>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {PENDING_COLUMNS}
+         FROM pending_timesheets
+         WHERE date = ?1 AND status != 'synced'
+         ORDER BY created_at ASC"
+    ))?;
+    let rows = stmt.query_map(params![date], row_to_pending)?;
+
+    let mut results = Vec::new();
+    for row in rows {
+        results.push(row?);
+    }
+    Ok(results)
+}
+
+/// Rewrite a queued entry's payload and put it back at the front of the queue.
+///
+/// This is the recovery path for a 'rejected' row (e.g. "Timesheets cannot be
+/// created on a private task"): the user re-points it at a different task and
+/// the row becomes immediately eligible for the next drain with no backoff.
+#[allow(clippy::too_many_arguments)]
+pub fn update_pending(
+    conn: &Connection,
+    id: i64,
+    task_id: i64,
+    project_id: i64,
+    task_name: &str,
+    project_name: &str,
+    description: &str,
+    duration_hours: f64,
+    date: &str,
+    allow_duplicate: bool,
+) -> AppResult<()> {
+    let changed = conn.execute(
+        "UPDATE pending_timesheets
+         SET task_id = ?2, project_id = ?3, task_name = ?4, project_name = ?5,
+             description = ?6, duration_hours = ?7, date = ?8, allow_duplicate = ?9,
+             status = 'pending', retry_count = 0, odoo_id = NULL,
+             last_error = NULL, last_attempt_at = NULL
+         WHERE id = ?1",
+        params![
+            id,
+            task_id,
+            project_id,
+            task_name,
+            project_name,
+            description,
+            duration_hours,
+            date,
+            allow_duplicate as i64
+        ],
+    )?;
+    if changed == 0 {
+        return Err(crate::error::AppError::General(format!(
+            "Queued entry {id} no longer exists"
+        )));
+    }
+    Ok(())
 }
 
 /// Remove a pending entry after successful sync (legacy, kept for potential external use).
@@ -133,30 +229,14 @@ pub fn claim_entries_for_sync(conn: &Connection) -> AppResult<Vec<PendingTimeshe
     )?;
 
     // Fetch candidates (pending/failed with retries remaining).
-    let mut stmt = conn.prepare(
-        "SELECT id, task_id, project_id, description, duration_hours, date,
-                status, odoo_id, retry_count, last_error, last_attempt_at, created_at
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {PENDING_COLUMNS}
          FROM pending_timesheets
          WHERE status IN ('pending', 'failed')
            AND retry_count < ?1
-         ORDER BY created_at ASC",
-    )?;
-    let rows = stmt.query_map(params![MAX_AUTO_RETRIES], |row| {
-        Ok(PendingTimesheet {
-            id: row.get(0)?,
-            task_id: row.get(1)?,
-            project_id: row.get(2)?,
-            description: row.get(3)?,
-            duration_hours: row.get(4)?,
-            date: row.get(5)?,
-            status: row.get(6)?,
-            odoo_id: row.get(7)?,
-            retry_count: row.get(8)?,
-            last_error: row.get(9)?,
-            last_attempt_at: row.get(10)?,
-            created_at: row.get(11)?,
-        })
-    })?;
+         ORDER BY created_at ASC"
+    ))?;
+    let rows = stmt.query_map(params![MAX_AUTO_RETRIES], row_to_pending)?;
 
     let now = chrono::Utc::now();
     let mut eligible_ids = Vec::new();
@@ -258,8 +338,14 @@ pub fn resolve_entry(conn: &Connection, id: i64, action: &str) -> AppResult<()> 
             )?;
         }
         "force" => {
+            // allow_duplicate = 1 is what makes "force" actually mean force: without
+            // it the next drain re-runs the same duplicate check against the same
+            // Odoo line and re-flags the row, leaving 'discard' as the only escape.
             conn.execute(
-                "UPDATE pending_timesheets SET status = 'pending', retry_count = 0, odoo_id = NULL, last_error = NULL WHERE id = ?1",
+                "UPDATE pending_timesheets
+                 SET status = 'pending', retry_count = 0, odoo_id = NULL,
+                     last_error = NULL, allow_duplicate = 1
+                 WHERE id = ?1",
                 params![id],
             )?;
         }
@@ -275,30 +361,14 @@ pub fn resolve_entry(conn: &Connection, id: i64, action: &str) -> AppResult<()> 
 
 /// Get entries that need user attention (duplicates, rejected, exhausted retries).
 pub fn get_entries_needing_review(conn: &Connection) -> AppResult<Vec<PendingTimesheet>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, task_id, project_id, description, duration_hours, date,
-                status, odoo_id, retry_count, last_error, last_attempt_at, created_at
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {PENDING_COLUMNS}
          FROM pending_timesheets
          WHERE status IN ('duplicate', 'rejected')
             OR (status = 'failed' AND retry_count >= ?1)
-         ORDER BY created_at ASC",
-    )?;
-    let rows = stmt.query_map(params![MAX_AUTO_RETRIES], |row| {
-        Ok(PendingTimesheet {
-            id: row.get(0)?,
-            task_id: row.get(1)?,
-            project_id: row.get(2)?,
-            description: row.get(3)?,
-            duration_hours: row.get(4)?,
-            date: row.get(5)?,
-            status: row.get(6)?,
-            odoo_id: row.get(7)?,
-            retry_count: row.get(8)?,
-            last_error: row.get(9)?,
-            last_attempt_at: row.get(10)?,
-            created_at: row.get(11)?,
-        })
-    })?;
+         ORDER BY created_at ASC"
+    ))?;
+    let rows = stmt.query_map(params![MAX_AUTO_RETRIES], row_to_pending)?;
 
     let mut results = Vec::new();
     for row in rows {
@@ -373,6 +443,18 @@ pub fn add_to_log(
         params![task_id, task_name, project_name, description, hours, date, odoo_id],
     )?;
     Ok(())
+}
+
+/// Remove log rows pointing at an Odoo line that no longer exists.
+///
+/// Without this, a deleted entry leaves a phantom row that keeps inflating the
+/// heuristic queries below (recurring/forgotten tasks, ranking, offline monthly).
+pub fn delete_log_by_odoo_id(conn: &Connection, odoo_id: i64) -> AppResult<usize> {
+    let deleted = conn.execute(
+        "DELETE FROM timesheet_log WHERE odoo_id = ?1",
+        params![odoo_id],
+    )?;
+    Ok(deleted)
 }
 
 /// Return all log entries whose `date` matches today (UTC).

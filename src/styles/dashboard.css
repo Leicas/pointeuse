@@ -1100,11 +1100,22 @@ a:hover { text-decoration: underline; }
   color: var(--text-muted);
 }
 
+/* Section heading that carries an action button on its right. */
+.detail-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 /* ==========================================================
    TOAST
    ========================================================== */
 #dashboard-toast {
   position: fixed;
+  /* .toast (main.css) sets `top`; without this the box is over-constrained
+     and `bottom` is dropped, pinning the toast to the top of the window. */
+  top: auto;
   bottom: 24px;
   left: 50%;
   transform: translateX(-50%) translateY(80px);
@@ -1121,11 +1132,20 @@ a:hover { text-decoration: underline; }
   transition: transform 0.25s ease, opacity 0.25s ease;
 }
 
-#dashboard-toast.show {
+/* showToast() writes `toast visible toast-<type>`; this ID selector (0,1,0,0)
+   must therefore match `.visible`, not `.show` — nothing ever adds `show`. */
+#dashboard-toast.visible {
   transform: translateX(-50%) translateY(0);
   opacity: 1;
   pointer-events: auto;
 }
+
+/* Severity accents. main.css's .toast-* rules (0,0,1,0) lose to the
+   `color` on #dashboard-toast (0,1,0,0), so restate them at ID strength. */
+#dashboard-toast.toast-error   { color: var(--danger); border-color: var(--danger); }
+#dashboard-toast.toast-success { color: var(--success); border-color: var(--success); }
+#dashboard-toast.toast-warning { color: var(--warning); border-color: var(--warning); }
+#dashboard-toast.toast-info    { color: var(--brand-bright); border-color: var(--brand); }
 
 /* ==========================================================
    EMPTY / LOADING STATES
@@ -1170,6 +1190,10 @@ a:hover { text-decoration: underline; }
 }
 .dash-empty {
   display: flex;
+  /* column + gap so the empty state can carry a call-to-action button under
+     its message; single-<p> usages are unaffected. */
+  flex-direction: column;
+  gap: 10px;
   align-items: center;
   justify-content: center;
   padding: 40px 20px;
