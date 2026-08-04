@@ -637,46 +637,9 @@ async fn handle_attendance_check(app: &AppHandle) {
         log::info!("[attendance] Status changed: checked_in={}", status.is_checked_in);
 
         if !status.is_checked_in {
-            // Auto-stop timer on external checkout
-            let stopped_result = {
-                let state = app.state::<AppState>();
-                let mut timer_guard = state.timer.lock().unwrap();
-                if timer_guard.is_running() {
-                    match timer_guard.stop() {
-                        Ok(result) => {
-                            let db = state.db.lock().unwrap();
-                            let _ = crate::timer::persistence::clear_timer_state(&db);
-                            Some(result)
-                        }
-                        Err(e) => {
-                            log::error!("[attendance] Failed to stop timer: {e}");
-                            None
-                        }
-                    }
-                } else {
-                    None
-                }
-            };
-
-            if let Some(result) = stopped_result {
-                let hours = result.elapsed_secs as f64 / 3600.0;
-                let date = chrono::Local::now().format("%Y-%m-%d").to_string();
-                crate::commands::timesheet::log_time_with_fallback(
-                    app, &client,
-                    result.task_id, result.project_id,
-                    &result.task_name, &result.project_name,
-                    hours, &date,
-                ).await;
-                log::info!(
-                    "[attendance] Auto-stopped timer for '{}' ({:.2}h) on external checkout",
-                    result.task_name, hours
-                );
-                let _ = app.emit("timer_auto_stopped", &result);
-
-                // Mobile: remove ongoing notification
-                #[cfg(mobile)]
-                crate::notification::remove_ongoing_notification(app);
-            }
+            // Auto-stop timer on external checkout. Settling it in Odoo and
+            // clearing the ongoing notification is the helper's job.
+            crate::devicesync::auto_stop_timer(app, &client).await;
         }
 
         let _ = app.emit("attendance_changed", &status);

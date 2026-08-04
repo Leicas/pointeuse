@@ -218,6 +218,29 @@ pub fn touch_recent(
     Ok(())
 }
 
+/// Record a task as used at an explicit time, keeping whichever stamp is later.
+///
+/// Used when seeding recents from another device's Odoo timesheet history: a
+/// day-old remote entry must not overwrite a task this device used minutes ago.
+pub fn touch_recent_at(
+    conn: &Connection,
+    task_id: i64,
+    task_name: &str,
+    project_name: Option<&str>,
+    used_at: &str,
+) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO recent_tasks (task_id, task_name, project_name, last_used)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(task_id) DO UPDATE SET
+             task_name    = excluded.task_name,
+             project_name = excluded.project_name,
+             last_used    = MAX(recent_tasks.last_used, excluded.last_used)",
+        params![task_id, task_name, project_name.unwrap_or(""), used_at],
+    )?;
+    Ok(())
+}
+
 /// Return the most recently used tasks, enriched with cached metadata.
 pub fn get_recent_tasks(conn: &Connection, limit: usize) -> AppResult<Vec<CachedTask>> {
     let mut stmt = conn.prepare(

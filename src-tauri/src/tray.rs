@@ -2,13 +2,12 @@ use tauri::{
     image::Image,
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     menu::{MenuBuilder, MenuItemBuilder},
-    AppHandle, Emitter, Manager,
+    AppHandle, Manager,
 };
 
 use crate::icon::generate_tray_icon;
 use crate::odoo::attendance::AttendanceStatus;
 use crate::state::AppState;
-use crate::timer::persistence::clear_timer_state;
 
 const TRAY_ID: &str = "main-tray";
 
@@ -159,39 +158,7 @@ async fn handle_attendance_toggle(app: &AppHandle) {
 
     if status.is_checked_in {
         // Auto-stop running timer on check-out
-        let stopped_result = {
-            let state = app.state::<AppState>();
-            let mut timer = state.timer.lock().unwrap();
-            if timer.is_running() {
-                match timer.stop() {
-                    Ok(result) => {
-                        let db = state.db.lock().unwrap();
-                        let _ = clear_timer_state(&db);
-                        Some(result)
-                    }
-                    Err(e) => {
-                        log::error!("Tray: failed to stop timer: {e}");
-                        None
-                    }
-                }
-            } else {
-                None
-            }
-        };
-
-        if let Some(result) = stopped_result {
-            let hours = result.elapsed_secs as f64 / 3600.0;
-            let date = chrono::Local::now().format("%Y-%m-%d").to_string();
-            crate::commands::timesheet::log_time_with_fallback(
-                app, &client,
-                result.task_id, result.project_id,
-                &result.task_name, &result.project_name,
-                hours, &date,
-            ).await;
-            log::info!("Tray: auto-stopped timer for '{}' ({:.2}h)", result.task_name, hours);
-            // Notify frontend of timer state change
-            let _ = app.emit("timer_auto_stopped", &result);
-        }
+        crate::devicesync::auto_stop_timer(app, &client).await;
 
         match client.check_out().await {
             Ok(hours) => {

@@ -31,6 +31,7 @@ A fast, native time tracker for [Odoo](https://www.odoo.com/) — desktop (Windo
 - **Attendance integration** — check in / check out (`hr.attendance`) from the app or the system tray; the timer auto-stops when you check out from anywhere else (Odoo web, mobile)
 - **Idle reminders** — a configurable popup asks what you're working on, with quick-switch suggestions; on Android these are notifications with action buttons
 - **Offline-first** — all Odoo data is cached in SQLite; timesheets queue locally when offline and sync when the connection returns
+- **Synced across your devices** — start a timer on your phone and your desktop picks it up (and vice versa); stopping anywhere stops it everywhere. Runs over your Odoo server, so there is nothing extra to host, and the timer keeps working at full speed even when Odoo is slow or unreachable
 - **Task dashboard** — kanban board grouped by stage/project, task detail panel, time log with day/week/month views
 - **System tray** — timer status, attendance toggle, quick controls
 - **Three themes** — dark, light, and a colorblind-friendly palette

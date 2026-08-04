@@ -710,6 +710,142 @@ impl OdooClient {
             .await
     }
 
+    // -----------------------------------------------------------------------
+    // Live sessions (cross-device timer sync)
+    //
+    // A running timer is mirrored as an `account.analytic.line` carrying a
+    // marker in its description. Every instance logged in as this user can see
+    // it, so a run started on one device is adoptable on the others. Stopping
+    // strips the marker and the line becomes an ordinary timesheet entry.
+    // -----------------------------------------------------------------------
+
+    /// Restrict a domain to the current user's own timesheet lines.
+    fn owner_domain(&self) -> XmlRpcValue {
+        match self.employee_id {
+            Some(eid) => XmlRpcValue::Array(vec![
+                XmlRpcValue::String("employee_id".into()),
+                XmlRpcValue::String("=".into()),
+                XmlRpcValue::Int(eid),
+            ]),
+            None => XmlRpcValue::Array(vec![
+                XmlRpcValue::String("user_id".into()),
+                XmlRpcValue::String("=".into()),
+                XmlRpcValue::Int(self.uid),
+            ]),
+        }
+    }
+
+    /// Publish a running timer as a zero-hour live line.
+    ///
+    /// The task recompute is deliberately skipped: the line carries no hours
+    /// yet, and heartbeats would otherwise hammer `project.task` every minute.
+    pub async fn create_live_line(
+        &self,
+        task_id: i64,
+        project_id: i64,
+        marked_name: &str,
+        date: &str,
+    ) -> AppResult<i64> {
+        let mut values = HashMap::new();
+        values.insert("name".into(), XmlRpcValue::String(marked_name.into()));
+        values.insert("task_id".into(), XmlRpcValue::Int(task_id));
+        values.insert("project_id".into(), XmlRpcValue::Int(project_id));
+        values.insert("unit_amount".into(), XmlRpcValue::Double(0.0));
+        values.insert("date".into(), XmlRpcValue::String(date.into()));
+
+        if let Some(eid) = self.employee_id {
+            values.insert("employee_id".into(), XmlRpcValue::Int(eid));
+        }
+
+        let line_id = self.create("account.analytic.line", values).await?;
+        log::info!("Published live session line {line_id} for task {task_id}");
+        Ok(line_id)
+    }
+
+    /// Refresh the elapsed hours of a live line. Doubles as a liveness signal:
+    /// the write bumps `write_date`, which other devices read.
+    pub async fn heartbeat_live_line(&self, line_id: i64, hours: f64) -> AppResult<bool> {
+        let mut values = HashMap::new();
+        values.insert("unit_amount".into(), XmlRpcValue::Double(hours));
+        self.write("account.analytic.line", vec![line_id], values)
+            .await
+    }
+
+    /// Turn a live line into an ordinary timesheet entry: strip the marker,
+    /// write the final hours, and let the task recompute its progress.
+    pub async fn finalize_live_line(
+        &self,
+        line_id: i64,
+        task_id: i64,
+        project_id: i64,
+        clean_name: &str,
+        hours: f64,
+        date: &str,
+    ) -> AppResult<bool> {
+        let mut values = HashMap::new();
+        values.insert("name".into(), XmlRpcValue::String(clean_name.into()));
+        values.insert("unit_amount".into(), XmlRpcValue::Double(hours));
+        values.insert("date".into(), XmlRpcValue::String(date.into()));
+        // A zero id means "unknown" here, not "clear the field" — writing it
+        // would make Odoo reject the whole update.
+        if task_id > 0 {
+            values.insert("task_id".into(), XmlRpcValue::Int(task_id));
+        }
+        if project_id > 0 {
+            values.insert("project_id".into(), XmlRpcValue::Int(project_id));
+        }
+
+        let ok = self
+            .write("account.analytic.line", vec![line_id], values)
+            .await?;
+        if task_id > 0 {
+            self.recompute_task(task_id).await;
+        }
+        log::info!("Finalized live session line {line_id} at {hours:.2}h");
+        Ok(ok)
+    }
+
+    /// Fetch every live line this user currently has, newest dates first.
+    ///
+    /// `marker` is the literal sentinel embedded in the description; `since`
+    /// bounds the search so it stays a cheap indexed query.
+    pub async fn find_live_lines(
+        &self,
+        marker: &str,
+        since: &str,
+    ) -> AppResult<Vec<models::OdooTimesheetEntry>> {
+        let domain = vec![
+            XmlRpcValue::Array(vec![
+                XmlRpcValue::String("name".into()),
+                XmlRpcValue::String("like".into()),
+                XmlRpcValue::String(marker.into()),
+            ]),
+            XmlRpcValue::Array(vec![
+                XmlRpcValue::String("date".into()),
+                XmlRpcValue::String(">=".into()),
+                XmlRpcValue::String(since.into()),
+            ]),
+            self.owner_domain(),
+        ];
+
+        let records = self
+            .search_read(
+                "account.analytic.line",
+                domain,
+                vec![
+                    "id".into(),
+                    "name".into(),
+                    "task_id".into(),
+                    "project_id".into(),
+                    "unit_amount".into(),
+                    "date".into(),
+                ],
+                Some(20),
+            )
+            .await?;
+        models::parse_records(records)
+    }
+
     /// Write an empty dict to a task so Odoo recomputes `effective_hours`.
     /// Never fatal — a stale progress bar is not worth failing a write that landed.
     pub async fn recompute_task(&self, task_id: i64) {

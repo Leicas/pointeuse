@@ -23,7 +23,7 @@ cargo check                                  # Fast type-check without building
 cargo build                                  # Build Rust backend only
 ```
 
-There are no automated tests in this project. CI runs clippy, an Android cross-target check, and multi-platform builds.
+There is only a handful of unit tests (`cargo test`), covering pure logic such as the live-session marker codec. CI runs clippy, an Android cross-target check, and multi-platform builds — not the tests.
 
 ## Architecture
 
@@ -46,7 +46,8 @@ There are no automated tests in this project. CI runs clippy, an Android cross-t
 | `notification.rs` | Android notification system (ongoing timer + reminder channels, `#[cfg(mobile)]`) |
 | `tray.rs` | System tray menu with dynamic attendance status |
 | `credentials.rs` | System keyring integration for password storage |
-| `db/` | SQLite schema migrations, task/project cache, pending timesheets, timesheet log |
+| `db/` | SQLite schema migrations, task/project cache, pending timesheets, timesheet log, live-session outbox |
+| `devicesync.rs` | Cross-device timer sync through Odoo (live-session marker, reconciler, conflict rule) |
 | `icon.rs` | Dynamic tray icon generation (procedural P-in-clock-ring; `tools/gen-icon/` regenerates `app-icon.png`: `cargo run --manifest-path tools/gen-icon/Cargo.toml`) |
 
 ### Odoo communication
@@ -55,21 +56,44 @@ All Odoo interaction uses XML-RPC v2 (`/xmlrpc/2/object` via `execute_kw`). The 
 
 ### Background tasks
 
-Three tokio-spawned loops run at startup (in `lib.rs`):
+Tokio-spawned loops run at startup (in `lib.rs`):
 1. **Attendance poll** — every 60s, syncs attendance status from Odoo, auto-stops timer on external checkout
 2. **Idle reminder** — every 30s check cycle, shows popup window when interval threshold is met
 3. **Auto-login** — one-shot, restores session from keyring on startup
+4. **Cache sync** — every 5 min, pre-fetches the current week's timesheets/attendance
+5. **Device-sync reconciler** (`devicesync::run_sync_loop`) — backs off while idle (15s→120s visible, 60s→600s hidden), resetting to the base cadence on any activity or on a `nudge()` from window focus / a timer command. The nudge is the responsive path; the poll is a safety net, so it stays cheap against a slow Odoo
 
 ### Persistence
 
-- **SQLite** (`rusqlite`, bundled): task/project cache, pending timesheets (offline queue), timesheet history, timer crash-recovery state
-- **Tauri plugin-store** (`settings.json`): connection details, reminder interval, autostart preference
+- **SQLite** (`rusqlite`, bundled): task/project cache, pending timesheets (offline queue), timesheet history, timer crash-recovery state (incl. live-session identity), `session_outbox` of Odoo writes owed by finished runs
+- **Tauri plugin-store** (`settings.json`): connection details, reminder interval, autostart preference, `device_id` / `device_label` / `device_sync_enabled`
 - **System keyring**: Odoo password only
 
 ### Frontend-backend communication
 
 - **Frontend -> Backend**: `invoke('command_name', { params })` (Tauri commands)
 - **Backend -> Frontend**: `app_handle.emit("event_name", payload)` for async notifications (attendance changes, timer events, sync status, idle reminders)
+
+### Cross-device sync
+
+Instances signed into the same Odoo server with the same user share the running
+timer. There is no Pointeuse server, so Odoo carries the state: a running timer
+is mirrored as an `account.analytic.line` whose description ends in a
+`#PTZ1#<session>#<device>#<label>#<start-epoch>#` marker, created when the timer
+starts and stripped when it stops (at which point it is just a normal timesheet
+entry).
+
+The local `TimerEngine` stays authoritative — **no command waits on Odoo**.
+`devicesync` reconciles in the background: it drains the outbox, pulls live
+lines, adopts or resolves them, then publishes/heartbeats ours. Only the device
+that started a run heartbeats it; others mirror and compute elapsed from the
+marker's start. When two runs overlap, the newest start wins and the loser's
+time is written to Odoo rather than dropped. Recents are shared by deriving them
+from recent Odoo timesheet history rather than replicating a local list.
+
+Stopping hands the Odoo side to `session_outbox`, which becomes its sole owner:
+a subsequent `log_time` for that session amends the same line instead of
+creating a second one (`commands::timesheet::settle_pending_session`).
 
 ### Android
 

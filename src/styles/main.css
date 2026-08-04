@@ -725,6 +725,18 @@ select:focus,
   color: var(--text-muted);
 }
 
+/* Shown when the running timer was started on another device */
+.timer-origin-badge {
+  display: inline-block;
+  margin-top: 3px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 9.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 .timer-state-wrap {
   margin-top: 4px;
 }
@@ -1712,6 +1724,21 @@ select:focus,
 }
 
 .settings-select:focus {
+  border-color: var(--brand);
+}
+
+.settings-input {
+  width: 130px;
+  padding: 4px 8px;
+  font-size: 11.5px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.settings-input:focus {
   border-color: var(--brand);
 }
 

@@ -8,6 +8,8 @@ const KEY_QUICKSWITCH_MODE: &str = "quickswitch_mode";
 const KEY_QUICKSWITCH_ITEMS: &str = "quickswitch_items";
 const KEY_HIDE_DONE_TASKS: &str = "hide_done_tasks";
 const KEY_DEFAULT_TASK: &str = "default_task";
+const KEY_DEVICE_SYNC: &str = "device_sync_enabled";
+const KEY_DEVICE_LABEL: &str = "device_label";
 
 // ---------------------------------------------------------------------------
 // Quick-switch item (manual-mode pinned task)
@@ -114,6 +116,44 @@ pub async fn set_hide_done_tasks(
         let _ = store.save();
     }
     log::info!("Hide done tasks set to: {hide}");
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_device_sync_enabled(app_handle: tauri::AppHandle) -> AppResult<bool> {
+    Ok(crate::devicesync::sync_enabled(&app_handle))
+}
+
+#[tauri::command]
+pub async fn set_device_sync_enabled(
+    enabled: bool,
+    app_handle: tauri::AppHandle,
+) -> AppResult<()> {
+    if let Ok(store) = app_handle.store(STORE_FILE) {
+        store.set(KEY_DEVICE_SYNC, serde_json::json!(enabled));
+        let _ = store.save();
+    }
+    log::info!("Cross-device sync set to: {enabled}");
+    if enabled {
+        crate::devicesync::nudge(&app_handle);
+    }
+    Ok(())
+}
+
+/// Rename this install as it appears in "started on <label>" hints elsewhere.
+#[tauri::command]
+pub async fn set_device_label(label: String, app_handle: tauri::AppHandle) -> AppResult<()> {
+    let label = label.trim().to_string();
+    if label.is_empty() {
+        return Err(crate::error::AppError::General(
+            "Device name cannot be empty".into(),
+        ));
+    }
+    if let Ok(store) = app_handle.store(STORE_FILE) {
+        store.set(KEY_DEVICE_LABEL, serde_json::json!(label));
+        let _ = store.save();
+    }
+    log::info!("Device label set to: {label}");
     Ok(())
 }
 

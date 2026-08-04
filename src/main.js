@@ -61,6 +61,8 @@ const store = createStore({
   monthYear: null, // { year, month } for month view
   todayPending: [],   // queued rows for the viewed date, never summed into the total
   justAddedKey: null, // "<task_id>|<hours>" — flashes the new row once
+  device: { id: '', label: '' }, // this install's cross-device sync identity
+  deviceSyncEnabled: true,
 });
 
 // ── API Layer ─────────────────────────────────────────────────────────
@@ -140,6 +142,12 @@ const api = {
   updatePendingEntry: (entryId, taskId, projectId, taskName, projectName, description, durationHours, date, allowDuplicate) =>
     invoke('update_pending_entry', { entryId, taskId, projectId, taskName, projectName, description, durationHours, date, allowDuplicate }),
   getPendingForDate: (date) => invoke('get_pending_for_date', { date }),
+  // Cross-device sync
+  getDeviceIdentity: () => invoke('get_device_identity'),
+  syncDevicesNow: () => invoke('sync_devices_now'),
+  getDeviceSyncEnabled: () => invoke('get_device_sync_enabled'),
+  setDeviceSyncEnabled: (enabled) => invoke('set_device_sync_enabled', { enabled }),
+  setDeviceLabel: (label) => invoke('set_device_label', { label }),
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────
@@ -423,6 +431,17 @@ store.subscribe((state) => {
   // Update titlebar with timer status
   const titleEl = document.querySelector('.titlebar-title');
   if (titleEl) titleEl.textContent = t.is_running ? `${formatTime(t.elapsed_secs)} — ${t.task_name || ''}` : 'Pointeuse';
+
+  // "Started on <device>" — only when this run came from somewhere else
+  const originBadge = document.getElementById('timer-origin-badge');
+  if (originBadge) {
+    const elsewhere = t.is_running
+      && t.origin_device
+      && state.device.id
+      && t.origin_device !== state.device.id;
+    originBadge.style.display = elsewhere ? '' : 'none';
+    if (elsewhere) originBadge.textContent = `started on ${t.origin_label || 'another device'}`;
+  }
 
   if (t.is_running) {
     timerDisplay.textContent = formatTime(t.elapsed_secs);
@@ -713,6 +732,41 @@ try {
     refreshTodayEntries();
   });
 } catch (_) {}
+
+// Cross-device sync: another instance of Pointeuse on the same Odoo login
+// started or stopped a timer, and the backend has already mirrored it here.
+try {
+  window.__TAURI__?.event?.listen('timer_remote_started', async (event) => {
+    const p = event.payload || {};
+    await refreshTimerState();
+    reminderPopup.classList.remove('visible');
+    const where = p.origin_label ? ` on ${p.origin_label}` : '';
+    showToast(`Picked up "${p.task_name}" started${where}`, 'success');
+  });
+
+  window.__TAURI__?.event?.listen('timer_remote_stopped', async (event) => {
+    const p = event.payload || {};
+    store.setState({ timer: { is_running: false, elapsed_secs: 0 }, stoppedTimer: null });
+    await refreshTimerState();
+    reminderPopup.classList.remove('visible');
+    showToast(`"${p.task_name}" was stopped on another device`, 'success');
+    refreshTodayEntries();
+  });
+
+  // A live session was settled in Odoo — today's totals moved.
+  window.__TAURI__?.event?.listen('timesheet_changed', () => {
+    refreshTodayEntries();
+  });
+} catch (_) {}
+
+// Reconcile as soon as the window is looked at again: waiting out the poll
+// interval would show a stale timer at exactly the wrong moment.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && store.getState().auth.authenticated) {
+    api.syncDevicesNow().catch(() => {});
+    refreshTimerState();
+  }
+});
 
 // Listen for explicit reminder dismiss from backend (e.g., external checkout)
 try {
@@ -1941,6 +1995,33 @@ $('#setting-hide-done')?.addEventListener('change', async (e) => {
   } catch (err) { showToast(String(err)); }
 });
 
+// ── Cross-device Sync Settings ────────────────────────────────────────
+
+$('#setting-device-sync')?.addEventListener('change', async (e) => {
+  const enabled = e.target.checked;
+  try {
+    await api.setDeviceSyncEnabled(enabled);
+    store.setState({ deviceSyncEnabled: enabled });
+    showToast(enabled ? 'Timer sync enabled' : 'Timer sync disabled', 'success');
+  } catch (err) {
+    e.target.checked = !enabled;
+    showToast(String(err));
+  }
+});
+
+$('#setting-device-label')?.addEventListener('change', async (e) => {
+  const label = e.target.value.trim();
+  if (!label) {
+    e.target.value = store.getState().device.label;
+    return;
+  }
+  try {
+    await api.setDeviceLabel(label);
+    const device = await api.getDeviceIdentity();
+    store.setState({ device });
+  } catch (err) { showToast(String(err)); }
+});
+
 // ── Task Picker Popup ─────────────────────────────────────────────────
 
 const taskPickerPopup = $('#task-picker-popup');
@@ -2227,6 +2308,20 @@ async function refreshHideDoneTasks() {
   } catch (_) {}
 }
 
+async function refreshDeviceSync() {
+  try {
+    const [device, enabled] = await Promise.all([
+      api.getDeviceIdentity(),
+      api.getDeviceSyncEnabled(),
+    ]);
+    store.setState({ device, deviceSyncEnabled: enabled });
+    const toggle = $('#setting-device-sync');
+    if (toggle) toggle.checked = enabled;
+    const label = $('#setting-device-label');
+    if (label) label.value = device.label || '';
+  } catch (_) {}
+}
+
 async function refreshAll() {
   await Promise.all([
     refreshTimerState(),
@@ -2235,6 +2330,7 @@ async function refreshAll() {
     refreshReminderInterval(),
     refreshQuickswitchSettings(),
     refreshHideDoneTasks(),
+    refreshDeviceSync(),
   ]);
 }
 

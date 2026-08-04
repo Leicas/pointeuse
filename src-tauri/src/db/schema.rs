@@ -98,6 +98,27 @@ CREATE TABLE IF NOT EXISTS cache_meta (
 );
 "#;
 
+/// Migration 007: outbox of pending Odoo writes for finished live sessions.
+///
+/// A run that was published to Odoo owns an `account.analytic.line`; stopping
+/// or discarding it has to reach Odoo eventually, even if the app is offline or
+/// gets killed in between. Rows live here until the reconciler flushes them.
+const MIGRATION_007_SESSION_OUTBOX: &str = r#"
+CREATE TABLE IF NOT EXISTS session_outbox (
+    session_id   TEXT PRIMARY KEY,
+    odoo_line_id INTEGER,
+    action       TEXT NOT NULL,           -- 'finalize' | 'discard'
+    task_id      INTEGER NOT NULL,
+    project_id   INTEGER NOT NULL DEFAULT 0,
+    task_name    TEXT NOT NULL DEFAULT '',
+    project_name TEXT NOT NULL DEFAULT '',
+    description  TEXT NOT NULL DEFAULT '',
+    hours        REAL NOT NULL DEFAULT 0.0,
+    date         TEXT NOT NULL,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"#;
+
 /// Open (or create) the database at `<app_data_dir>/timetracker.db` and run
 /// all pending migrations.
 pub fn initialize_database(app_data_dir: &Path) -> AppResult<Connection> {
@@ -187,7 +208,106 @@ pub fn initialize_database(app_data_dir: &Path) -> AppResult<Connection> {
         )?;
     }
 
+    // Migration 007: Cross-device timer sync — session identity on the running
+    // timer plus an outbox of Odoo writes that must survive an app restart.
+    let has_session_id: bool = conn
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('timer_state') WHERE name='session_id'")
+        .and_then(|mut s| s.query_row([], |r| r.get::<_, i64>(0)))
+        .unwrap_or(0)
+        > 0;
+    if !has_session_id {
+        conn.execute_batch(
+            "ALTER TABLE timer_state ADD COLUMN session_id TEXT NOT NULL DEFAULT '';
+             ALTER TABLE timer_state ADD COLUMN origin_device TEXT NOT NULL DEFAULT '';
+             ALTER TABLE timer_state ADD COLUMN origin_label TEXT NOT NULL DEFAULT '';
+             ALTER TABLE timer_state ADD COLUMN odoo_line_id INTEGER;",
+        )?;
+    }
+    conn.execute_batch(MIGRATION_007_SESSION_OUTBOX)?;
+
     info!("Database migrations applied successfully");
 
     Ok(conn)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scratch_dir(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("pointeuse-schema-test-{tag}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    fn columns(conn: &Connection, table: &str) -> Vec<String> {
+        conn.prepare(&format!("SELECT name FROM pragma_table_info('{table}')"))
+            .and_then(|mut s| {
+                s.query_map([], |r| r.get::<_, String>(0))
+                    .map(|rows| rows.filter_map(Result::ok).collect())
+            })
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn fresh_database_has_the_live_session_schema() {
+        let dir = scratch_dir("fresh");
+        let conn = initialize_database(&dir).expect("migrations should apply");
+
+        let timer_cols = columns(&conn, "timer_state");
+        for expected in ["session_id", "origin_device", "origin_label", "odoo_line_id"] {
+            assert!(timer_cols.contains(&expected.to_string()), "missing {expected}");
+        }
+        assert!(columns(&conn, "session_outbox").contains(&"action".to_string()));
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The upgrade path that matters: a database created before cross-device
+    /// sync existed must gain the new columns without losing its running timer.
+    #[test]
+    fn upgrades_a_pre_sync_database_in_place() {
+        let dir = scratch_dir("upgrade");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        {
+            let old = Connection::open(dir.join("timetracker.db")).unwrap();
+            old.execute_batch(
+                "CREATE TABLE timer_state (
+                     id               INTEGER PRIMARY KEY CHECK (id = 1),
+                     task_id          INTEGER NOT NULL,
+                     task_name        TEXT NOT NULL,
+                     project_name     TEXT NOT NULL DEFAULT '',
+                     start_utc        TEXT NOT NULL,
+                     accumulated_secs INTEGER NOT NULL DEFAULT 0
+                 );
+                 INSERT INTO timer_state (id, task_id, task_name, start_utc)
+                 VALUES (1, 42, 'Existing run', '2026-08-04T09:00:00+00:00');",
+            )
+            .unwrap();
+        }
+
+        let conn = initialize_database(&dir).expect("migrations should apply");
+        crate::timer::persistence::ensure_project_id_column(&conn);
+
+        let timer_cols = columns(&conn, "timer_state");
+        for expected in ["project_id", "session_id", "origin_device", "origin_label", "odoo_line_id"] {
+            assert!(timer_cols.contains(&expected.to_string()), "missing {expected}");
+        }
+
+        // The in-flight run survives, defaulting to "not synced".
+        let (task_id, session_id): (i64, String) = conn
+            .query_row(
+                "SELECT task_id, session_id FROM timer_state WHERE id = 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(task_id, 42);
+        assert_eq!(session_id, "");
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

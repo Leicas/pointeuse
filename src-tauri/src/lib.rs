@@ -1,6 +1,7 @@
 mod commands;
 mod credentials;
 mod db;
+mod devicesync;
 mod error;
 #[cfg(desktop)]
 mod icon;
@@ -153,41 +154,7 @@ async fn run_attendance_poll(app_handle: tauri::AppHandle) {
 
             // If user just checked out externally, auto-stop running timer
             if !status.is_checked_in {
-                let stopped_result = {
-                    let state = app_handle.state::<AppState>();
-                    let mut timer_guard = state.timer.lock().unwrap();
-                    if timer_guard.is_running() {
-                        match timer_guard.stop() {
-                            Ok(result) => {
-                                let db = state.db.lock().unwrap();
-                                let _ = timer::persistence::clear_timer_state(&db);
-                                Some(result)
-                            }
-                            Err(e) => {
-                                log::error!("Attendance poll: failed to stop timer: {e}");
-                                None
-                            }
-                        }
-                    } else {
-                        None
-                    }
-                };
-
-                if let Some(result) = stopped_result {
-                    let hours = result.elapsed_secs as f64 / 3600.0;
-                    let date = chrono::Local::now().format("%Y-%m-%d").to_string();
-                    commands::timesheet::log_time_with_fallback(
-                        &app_handle, &client,
-                        result.task_id, result.project_id,
-                        &result.task_name, &result.project_name,
-                        hours, &date,
-                    ).await;
-                    log::info!(
-                        "Attendance poll: auto-stopped timer for '{}' ({:.2}h) on external checkout",
-                        result.task_name, hours
-                    );
-                    let _ = app_handle.emit("timer_auto_stopped", &result);
-                }
+                devicesync::auto_stop_timer(&app_handle, &client).await;
 
                 // Dismiss any open reminder popup (desktop window + in-app overlay)
                 {
@@ -279,8 +246,13 @@ pub fn run() {
                     saved.project_name,
                     saved.start_utc,
                     saved.accumulated_secs,
+                    saved.session,
                 );
             }
+
+            // Identity used to stamp live sessions this install starts
+            let device = devicesync::load_identity(app.handle());
+            log::info!("Device identity: {} ({})", device.label, device.id);
 
             // Load reminder interval from store
             let reminder_interval = app
@@ -305,6 +277,10 @@ pub fn run() {
                 tasks_cache: Mutex::new(None),
                 projects_cache: Mutex::new(None),
                 sync_in_progress: Mutex::new(false),
+                device: Mutex::new(device),
+                sync_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
+                sync_wakeup: std::sync::Arc::new(tokio::sync::Notify::new()),
+                pending_log: Mutex::new(None),
                 #[cfg(desktop)]
                 pending_update: Mutex::new(None),
             };
@@ -382,6 +358,12 @@ pub fn run() {
                 run_cache_sync(cache_handle).await;
             });
 
+            // Spawn the cross-device reconciler (live timer sync through Odoo)
+            let devicesync_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                devicesync::run_sync_loop(devicesync_handle).await;
+            });
+
             // Spawn auto-login and tray rebuild
             let auto_login_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -414,10 +396,19 @@ pub fn run() {
             {
                 let window = app.get_webview_window("main").unwrap();
                 let window_clone = window.clone();
+                let focus_handle = app.handle().clone();
                 window.on_window_event(move |event| {
-                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        api.prevent_close();
-                        let _ = window_clone.hide();
+                    match event {
+                        tauri::WindowEvent::CloseRequested { api, .. } => {
+                            api.prevent_close();
+                            let _ = window_clone.hide();
+                        }
+                        // Coming back to the window is exactly when a timer
+                        // started elsewhere should already be on screen.
+                        tauri::WindowEvent::Focused(true) => {
+                            devicesync::nudge(&focus_handle);
+                        }
+                        _ => {}
                     }
                 });
             }
@@ -434,6 +425,8 @@ pub fn run() {
             commands::timer::stop_timer,
             commands::timer::discard_timer,
             commands::timer::get_timer_state,
+            commands::timer::get_device_identity,
+            commands::timer::sync_devices_now,
             commands::tasks::search_tasks,
             commands::tasks::get_my_tasks,
             commands::tasks::get_recent_tasks,
@@ -487,6 +480,9 @@ pub fn run() {
             commands::settings::set_quickswitch_items,
             commands::settings::get_hide_done_tasks,
             commands::settings::set_hide_done_tasks,
+            commands::settings::get_device_sync_enabled,
+            commands::settings::set_device_sync_enabled,
+            commands::settings::set_device_label,
             commands::settings::get_quick_switch_entries,
             commands::settings::get_default_task,
             commands::settings::set_default_task,

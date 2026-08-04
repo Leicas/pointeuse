@@ -132,6 +132,7 @@
             </button>
           </div>
           <span class="timer-project-name" id="timer-project-name"></span>
+          <span class="timer-origin-badge" id="timer-origin-badge" style="display:none"></span>
           <div class="timer-state-wrap" id="timer-state-wrap" style="display:none">
             <div class="timer-state-row">
               <select class="stage-select" id="timer-stage-select" title="Kanban column">
@@ -547,6 +548,27 @@
               <input type="checkbox" id="setting-hide-done" checked />
               <span class="toggle-slider"></span>
             </label>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h4 class="settings-heading">Devices</h4>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-label">Sync timer across devices</span>
+              <span class="setting-desc">Share the running timer with your other Pointeuse instances on this Odoo login</span>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="setting-device-sync" checked />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-label">This device</span>
+              <span class="setting-desc">Name shown on your other devices when a timer starts here</span>
+            </div>
+            <input type="text" class="settings-input" id="setting-device-label" placeholder="Device name" />
           </div>
         </div>
 

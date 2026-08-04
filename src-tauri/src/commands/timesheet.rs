@@ -29,6 +29,9 @@ fn last_day_of_month(year: i32, month: u32) -> String {
 
 /// Log time with private-task fallback to default task.
 /// Used by auto-stop paths (tray checkout, attendance poll) that don't go through the command.
+///
+/// Returns the Odoo line id when one was created, so callers that may later
+/// amend the entry (the cross-device log form) know what to write to.
 #[allow(clippy::too_many_arguments)]
 pub async fn log_time_with_fallback(
     app: &tauri::AppHandle,
@@ -39,7 +42,7 @@ pub async fn log_time_with_fallback(
     project_name: &str,
     hours: f64,
     date: &str,
-) {
+) -> Option<i64> {
     use tauri::Emitter;
     use tauri_plugin_store::StoreExt;
 
@@ -55,6 +58,7 @@ pub async fn log_time_with_fallback(
             let state = app.state::<AppState>();
             let db = state.db.lock().unwrap();
             let _ = crate::db::timesheets::add_to_log(&db, task_id, task_name, project_name, task_name, hours, date, Some(odoo_id));
+            Some(odoo_id)
         }
         Err(e) => {
             let err_msg = e.to_string();
@@ -73,6 +77,7 @@ pub async fn log_time_with_fallback(
                                 "default_task": dt.task_name,
                                 "hours": hours,
                             }));
+                            Some(odoo_id)
                         }
                         Err(e2) => {
                             log::error!("log_time_with_fallback: default task also failed, queuing: {e2}");
@@ -80,6 +85,7 @@ pub async fn log_time_with_fallback(
                             let db = state.db.lock().unwrap();
                             let _ = crate::db::timesheets::queue_timesheet(&db, dt.task_id, dt.project_id, &dt.task_name, &dt.project_name, &desc, hours, date, false);
                             let _ = crate::db::timesheets::add_to_log(&db, dt.task_id, &dt.task_name, &dt.project_name, &desc, hours, date, None);
+                            None
                         }
                     }
                 } else {
@@ -88,6 +94,7 @@ pub async fn log_time_with_fallback(
                     let db = state.db.lock().unwrap();
                     let _ = crate::db::timesheets::queue_timesheet(&db, task_id, project_id, task_name, project_name, task_name, hours, date, false);
                     let _ = crate::db::timesheets::add_to_log(&db, task_id, task_name, project_name, task_name, hours, date, None);
+                    None
                 }
             } else {
                 log::error!("log_time_with_fallback: Odoo failed, queuing: {e}");
@@ -95,6 +102,7 @@ pub async fn log_time_with_fallback(
                 let db = state.db.lock().unwrap();
                 let _ = crate::db::timesheets::queue_timesheet(&db, task_id, project_id, task_name, project_name, task_name, hours, date, false);
                 let _ = crate::db::timesheets::add_to_log(&db, task_id, task_name, project_name, task_name, hours, date, None);
+                None
             }
         }
     }
@@ -233,6 +241,127 @@ fn spawn_monthly_refresh(app: tauri::AppHandle, year: i32, month: u32) {
     });
 }
 
+/// Finish off a run that was tracked across devices.
+///
+/// Such a run already owns — or is queued to own — a single timesheet line in
+/// Odoo, so the log form must amend that line instead of creating a second one.
+/// Returns `None` when this call has nothing to do with a synced run, in which
+/// case the caller falls through to the ordinary create path.
+#[allow(clippy::too_many_arguments)]
+async fn settle_pending_session(
+    app: &tauri::AppHandle,
+    state: &tauri::State<'_, AppState>,
+    client: Option<&crate::odoo::client::OdooClient>,
+    task_id: i64,
+    task_name: &str,
+    project_name: &str,
+    description: &str,
+    duration_hours: f64,
+    date: &str,
+) -> AppResult<Option<LogTimeResult>> {
+    let pending = { state.pending_log.lock().unwrap().clone() };
+    let Some(pending) = pending else {
+        return Ok(None);
+    };
+    // The log form was retargeted at a different task — treat it as a new entry
+    // and leave the session's own line to the reconciler.
+    if pending.task_id != task_id {
+        return Ok(None);
+    }
+    // Long-abandoned: the reconciler settled that run ages ago, and this call
+    // is a genuinely new entry that happens to share its task.
+    let age_mins = chrono::Utc::now()
+        .signed_duration_since(pending.stopped_at)
+        .num_minutes();
+    if age_mins >= crate::devicesync::PENDING_LOG_TTL_MINS {
+        *state.pending_log.lock().unwrap() = None;
+        return Ok(None);
+    }
+    // One-shot: whatever happens below, this session is settled.
+    *state.pending_log.lock().unwrap() = None;
+
+    let lock = state.sync_lock.clone();
+    let _guard = lock.lock().await;
+
+    // Still queued: fold the user's edits into the queued write.
+    let queued_entry = {
+        let db = state.db.lock().unwrap();
+        let amended = crate::db::session::amend_finalize(
+            &db,
+            &pending.session_id,
+            description,
+            duration_hours,
+            date,
+        )
+        .unwrap_or(false);
+        if amended {
+            crate::db::session::get(&db, &pending.session_id).unwrap_or(None)
+        } else {
+            None
+        }
+    };
+
+    let Some(client) = client else {
+        // Offline. The queued row (or the pending-timesheet fallback behind it)
+        // already carries the work, so nothing is lost.
+        log::info!("log_time: offline, session {} stays queued", pending.session_id);
+        return Ok(Some(LogTimeResult { success: false, odoo_id: None, queued: true }));
+    };
+
+    if let Some(entry) = queued_entry {
+        return Ok(Some(
+            match crate::devicesync::flush_one(app, client, &entry).await {
+                crate::devicesync::Flushed::Done(line) => {
+                    let db = state.db.lock().unwrap();
+                    let _ = crate::db::session::remove(&db, &pending.session_id);
+                    // A `None` line means it went to the offline queue instead.
+                    LogTimeResult {
+                        success: line.is_some(),
+                        odoo_id: line,
+                        queued: line.is_none(),
+                    }
+                }
+                // Row stays queued; the reconciler retries with the user's edits.
+                crate::devicesync::Flushed::Retry => LogTimeResult {
+                    success: false,
+                    odoo_id: None,
+                    queued: true,
+                },
+            },
+        ));
+    }
+
+    // Already flushed by the reconciler — rewrite the line it landed on.
+    let Some(line_id) = pending.odoo_line_id else {
+        log::warn!(
+            "log_time: session {} was settled but its line is unknown; not creating a duplicate",
+            pending.session_id
+        );
+        return Ok(Some(LogTimeResult { success: true, odoo_id: None, queued: false }));
+    };
+
+    let mut values = std::collections::HashMap::new();
+    values.insert("name".to_string(), XmlRpcValue::String(description.to_string()));
+    values.insert("unit_amount".to_string(), XmlRpcValue::Double(duration_hours));
+    values.insert("date".to_string(), XmlRpcValue::String(date.to_string()));
+
+    match client.update_timesheet_line(line_id, values).await {
+        Ok(_) => {
+            client.recompute_task(task_id).await;
+            let db = state.db.lock().unwrap();
+            let _ = delete_log_by_odoo_id(&db, line_id);
+            add_to_log(&db, task_id, task_name, project_name, description, duration_hours, date, Some(line_id))?;
+            Ok(Some(LogTimeResult { success: true, odoo_id: Some(line_id), queued: false }))
+        }
+        Err(e) => {
+            log::error!("log_time: could not amend line {line_id}: {e}");
+            // The line still holds the provisional description and the right
+            // hours, so the time is recorded — only the edit was lost.
+            Ok(Some(LogTimeResult { success: false, odoo_id: Some(line_id), queued: false }))
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn log_time(
@@ -255,6 +384,23 @@ pub async fn log_time(
         let odoo_guard = state.odoo.lock().unwrap();
         odoo_guard.clone()
     };
+
+    if let Some(result) = settle_pending_session(
+        &app,
+        &state,
+        odoo_client.as_ref(),
+        task_id,
+        &task_name,
+        &project_name,
+        &description,
+        duration_hours,
+        &date,
+    )
+    .await?
+    {
+        spawn_entries_refresh(app, date);
+        return Ok(result);
+    }
 
     // Load default task config for private-task fallback
     let default_task: Option<crate::commands::settings::DefaultTaskConfig> = {
