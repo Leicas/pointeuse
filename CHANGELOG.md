@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/Leicas/pointeuse/compare/v1.3.0...v1.4.0) (2026-08-04)
+
+
+### Features
+
+* **sync:** share the running timer across devices through Odoo ([6778c2b](https://github.com/Leicas/pointeuse/commit/6778c2b8cd46cb47511b943f42991f3605f1e760)), closes [#PTZ1](https://github.com/Leicas/pointeuse/issues/PTZ1)
+
 # [1.3.0](https://github.com/Leicas/pointeuse/compare/v1.2.0...v1.3.0) (2026-07-30)
 
 
