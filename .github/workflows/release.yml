@@ -435,6 +435,10 @@ jobs:
           releaseFiles: src-tauri/gen/android/app/build/outputs/bundle/universalRelease/app-universal-release.aab
           track: alpha          # Play track id of the closed-testing track
           status: completed     # set to "draft" to require manual rollout in Play
+          # Required while the app has never been published: the Play API
+          # rejects normal edits.commit calls on draft apps. Harmless to keep
+          # afterwards — changes just wait to be sent for review manually.
+          changesNotSentForReview: true
 
       - name: Always wipe key.properties + decoded keystore
         if: always() && env.HAS_KEYSTORE == 'true'
