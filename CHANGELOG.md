@@ -1,3 +1,10 @@
+## [1.4.2](https://github.com/Leicas/pointeuse/compare/v1.4.1...v1.4.2) (2026-08-26)
+
+
+### Bug Fixes
+
+* **android:** restore HTTPS (reqwest 0.13 TLS panic) + timeouts, error chains, warm-process guard ([#6](https://github.com/Leicas/pointeuse/issues/6)) ([c6bb4da](https://github.com/Leicas/pointeuse/commit/c6bb4daba57b67b945e6832b241dccbc2c2ebf42))
+
 ## [1.4.1](https://github.com/Leicas/pointeuse/compare/v1.4.0...v1.4.1) (2026-08-26)
 
 
