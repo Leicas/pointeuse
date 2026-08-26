@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pointeuse — Privacy Policy / Politique de confidentialité</title>
+<style>
+  :root {
+    --bg: #f2f5f7;
+    --fg: #16211c;
+    --muted: #4e5f57;
+    --accent: #0f766e;
+    --accent-soft: #2dd4bf;
+    --card: #ffffff;
+    --border: #d5dfdb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1513;
+      --fg: #e2ece8;
+      --muted: #93a69e;
+      --accent: #2dd4bf;
+      --accent-soft: #0f766e;
+      --card: #16201c;
+      --border: #2a3833;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    padding: 2rem 1rem 4rem;
+  }
+  main { max-width: 760px; margin: 0 auto; }
+  header {
+    display: flex; align-items: center; gap: 0.75rem;
+    margin-bottom: 0.5rem;
+  }
+  h1 { font-size: 1.6rem; margin: 0; color: var(--accent); }
+  .lang-switch {
+    margin: 1rem 0 2rem; display: inline-flex; gap: 0.5rem;
+    background: var(--card); padding: 0.25rem; border-radius: 999px;
+    border: 1px solid var(--border);
+  }
+  .lang-switch a {
+    padding: 0.35rem 0.9rem; border-radius: 999px;
+    text-decoration: none; color: var(--muted); font-weight: 600;
+  }
+  .lang-switch a.active { background: var(--accent); color: #fff; }
+  section { display: none; }
+  section.active { display: block; }
+  h2 {
+    color: var(--accent); margin-top: 2rem; font-size: 1.15rem;
+    border-bottom: 1px solid var(--border); padding-bottom: 0.3rem;
+  }
+  p, li { color: var(--fg); }
+  .muted { color: var(--muted); font-size: 0.92rem; }
+  ul { padding-left: 1.25rem; }
+  code {
+    background: var(--card); padding: 0.05rem 0.35rem;
+    border-radius: 4px; border: 1px solid var(--border);
+    font-size: 0.92em;
+  }
+  a { color: var(--accent); }
+  footer {
+    margin-top: 3rem; padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 0.85rem;
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Pointeuse</h1>
+  </header>
+
+  <div class="lang-switch" role="tablist">
+    <a href="#en" id="tab-en" class="active">English</a>
+    <a href="#fr" id="tab-fr">Français</a>
+  </div>
+
+  <section id="en" class="active">
+    <h2>Privacy Policy</h2>
+    <p class="muted">Last updated: 2026-08-26</p>
+
+    <p>
+      Pointeuse is a free, open-source time-tracking application that connects
+      to an Odoo server <strong>that you configure</strong> (typically your
+      employer's, or your own). The application's author operates
+      <strong>no server of any kind</strong>: Pointeuse only ever talks to the
+      Odoo server you point it at.
+    </p>
+
+    <h2>1. What data the app stores on your device</h2>
+    <ul>
+      <li>Your Odoo connection settings (server URL, database name, username) in the app's local settings store.</li>
+      <li>Your Odoo password or API key, stored exclusively in your operating system's secure keyring/keystore.</li>
+      <li>A local SQLite cache of your Odoo tasks, projects, timesheet history, attendance records, and any timesheet entries queued while offline.</li>
+      <li>Running-timer state (for crash recovery), a randomly generated device identifier, and an optional device label — used only for the cross-device sync feature below.</li>
+      <li>UI preferences (reminder interval, autostart, sync toggle).</li>
+    </ul>
+
+    <h2>2. Where your data goes</h2>
+    <p>
+      Data leaves your device only toward the Odoo server you configured:
+      attendance check-ins/check-outs, timesheet entries (task, description,
+      duration), and — if cross-device sync is enabled — a marker embedded in
+      the running timesheet entry's description containing a session id, your
+      device id/label, and the timer's start time, so your other devices signed
+      into the same Odoo account can mirror the running timer. Whether the
+      connection is encrypted depends on the server URL you configure; we
+      strongly recommend an <code>https://</code> Odoo server. How the data is
+      handled once on the Odoo server is governed by that server's operator
+      (e.g. your employer), not by Pointeuse.
+    </p>
+
+    <h2>3. What we do not collect</h2>
+    <ul>
+      <li>No analytics, telemetry, or usage tracking.</li>
+      <li>No advertising identifiers, no ads, no third-party SDKs.</li>
+      <li>No crash reporting services.</li>
+      <li>No location data, contacts, photos, microphone, or camera access.</li>
+      <li>Nothing is ever sent to the app's author. There is no account with us — your only account is your Odoo account.</li>
+    </ul>
+
+    <h2>4. Permissions</h2>
+    <ul>
+      <li><strong>Notifications</strong> — used to show the ongoing-timer notification and local idle reminders. All notifications are generated on-device; there is no push server.</li>
+      <li><strong>Internet</strong> — used only to communicate with the Odoo server you configured.</li>
+      <li><strong>Alarms / run at startup</strong> (Android) — used to keep timer notifications and reminders accurate.</li>
+    </ul>
+
+    <h2>5. Children</h2>
+    <p>
+      Pointeuse is a workplace tool and is not directed at children under 13.
+      We do not knowingly collect personal information from children.
+    </p>
+
+    <h2>6. Your rights (GDPR)</h2>
+    <p>
+      Pointeuse itself holds your data only on your device: you can erase it at
+      any time by clearing the app's data or uninstalling it (the keyring entry
+      is removed when you disconnect). For data stored on the Odoo server,
+      exercise your rights (access, correction, export, deletion) with the
+      operator of that server.
+    </p>
+
+    <h2>7. Data retention</h2>
+    <ul>
+      <li><strong>On your device:</strong> until you uninstall the app or clear its data.</li>
+      <li><strong>On the Odoo server:</strong> per that server operator's own retention policy.</li>
+    </ul>
+
+    <h2>8. Changes to this policy</h2>
+    <p>
+      If we change this policy we will update the "Last updated" date above.
+    </p>
+
+    <h2>9. Contact</h2>
+    <p>
+      Questions or data requests:
+      <a href="mailto:antoine@weill-duflos.fr">antoine@weill-duflos.fr</a>.
+    </p>
+  </section>
+
+  <section id="fr">
+    <h2>Politique de confidentialité</h2>
+    <p class="muted">Dernière mise à jour : 26/08/2026</p>
+
+    <p>
+      Pointeuse est une application gratuite et open-source de suivi du temps
+      de travail qui se connecte à un serveur Odoo <strong>que vous
+      configurez</strong> (généralement celui de votre employeur, ou le vôtre).
+      L'auteur de l'application n'exploite <strong>aucun serveur</strong> :
+      Pointeuse ne communique qu'avec le serveur Odoo que vous lui indiquez.
+    </p>
+
+    <h2>1. Données stockées sur votre appareil</h2>
+    <ul>
+      <li>Vos paramètres de connexion Odoo (URL du serveur, base de données, identifiant) dans le stockage local de l'application.</li>
+      <li>Votre mot de passe ou clé API Odoo, stocké exclusivement dans le trousseau sécurisé de votre système d'exploitation.</li>
+      <li>Un cache SQLite local de vos tâches, projets, historiques de feuilles de temps, présences, et des saisies en attente lorsque vous êtes hors-ligne.</li>
+      <li>L'état du minuteur en cours (pour la reprise après plantage), un identifiant d'appareil généré aléatoirement et une étiquette d'appareil optionnelle — utilisés uniquement pour la synchronisation multi-appareils décrite ci-dessous.</li>
+      <li>Préférences de l'interface (intervalle de rappel, démarrage automatique, synchronisation).</li>
+    </ul>
+
+    <h2>2. Où vont vos données</h2>
+    <p>
+      Les données ne quittent votre appareil que vers le serveur Odoo que vous
+      avez configuré : pointages d'arrivée/départ, feuilles de temps (tâche,
+      description, durée), et — si la synchronisation multi-appareils est
+      activée — un marqueur intégré à la description de la feuille de temps en
+      cours contenant un identifiant de session, l'identifiant/étiquette de
+      votre appareil et l'heure de démarrage du minuteur, afin que vos autres
+      appareils connectés au même compte Odoo puissent refléter le minuteur en
+      cours. Le chiffrement de la connexion dépend de l'URL configurée ; nous
+      recommandons fortement un serveur Odoo en <code>https://</code>. Le
+      traitement des données une fois sur le serveur Odoo relève de l'opérateur
+      de ce serveur (par exemple votre employeur), pas de Pointeuse.
+    </p>
+
+    <h2>3. Ce que nous ne collectons pas</h2>
+    <ul>
+      <li>Aucune analyse, télémétrie ou suivi d'utilisation.</li>
+      <li>Aucun identifiant publicitaire, aucune publicité, aucun SDK tiers.</li>
+      <li>Aucun service de remontée de plantages.</li>
+      <li>Aucun accès à la localisation, aux contacts, aux photos, au micro ou à la caméra.</li>
+      <li>Rien n'est jamais transmis à l'auteur de l'application. Il n'existe pas de compte chez nous — votre seul compte est votre compte Odoo.</li>
+    </ul>
+
+    <h2>4. Autorisations</h2>
+    <ul>
+      <li><strong>Notifications</strong> — pour afficher la notification du minuteur en cours et les rappels d'inactivité locaux. Toutes les notifications sont générées sur l'appareil ; il n'y a pas de serveur push.</li>
+      <li><strong>Internet</strong> — uniquement pour communiquer avec le serveur Odoo que vous avez configuré.</li>
+      <li><strong>Alarmes / lancement au démarrage</strong> (Android) — pour garder les notifications du minuteur et les rappels exacts.</li>
+    </ul>
+
+    <h2>5. Enfants</h2>
+    <p>
+      Pointeuse est un outil professionnel qui ne s'adresse pas aux enfants de
+      moins de 13 ans. Nous ne collectons pas sciemment de données personnelles
+      d'enfants.
+    </p>
+
+    <h2>6. Vos droits (RGPD)</h2>
+    <p>
+      Pointeuse ne conserve vos données que sur votre appareil : vous pouvez
+      les effacer à tout moment en supprimant les données de l'application ou
+      en la désinstallant (l'entrée du trousseau est supprimée à la
+      déconnexion). Pour les données stockées sur le serveur Odoo, exercez vos
+      droits (accès, rectification, export, suppression) auprès de l'opérateur
+      de ce serveur.
+    </p>
+
+    <h2>7. Conservation des données</h2>
+    <ul>
+      <li><strong>Sur votre appareil :</strong> jusqu'à la désinstallation de l'application ou l'effacement de ses données.</li>
+      <li><strong>Sur le serveur Odoo :</strong> selon la politique de conservation de l'opérateur du serveur.</li>
+    </ul>
+
+    <h2>8. Modifications de cette politique</h2>
+    <p>
+      Si nous modifions cette politique, la date de « Dernière mise à jour »
+      ci-dessus sera actualisée.
+    </p>
+
+    <h2>9. Contact</h2>
+    <p>
+      Questions ou demandes liées aux données :
+      <a href="mailto:antoine@weill-duflos.fr">antoine@weill-duflos.fr</a>.
+    </p>
+  </section>
+
+  <footer>
+    Pointeuse is open source —
+    <a href="https://github.com/Leicas/pointeuse">github.com/Leicas/pointeuse</a>.
+  </footer>
+</main>
+
+<script>
+  (function () {
+    var tabs = { en: document.getElementById('tab-en'), fr: document.getElementById('tab-fr') };
+    var sections = { en: document.getElementById('en'), fr: document.getElementById('fr') };
+
+    function activate(lang) {
+      if (!tabs[lang]) lang = 'en';
+      Object.keys(tabs).forEach(function (k) {
+        tabs[k].classList.toggle('active', k === lang);
+        sections[k].classList.toggle('active', k === lang);
+      });
+      document.documentElement.setAttribute('lang', lang);
+    }
+
+    function fromHash() {
+      var h = (location.hash || '').replace('#', '');
+      return h === 'fr' || h === 'en' ? h : null;
+    }
+
+    var initial = fromHash();
+    if (!initial) {
+      var nav = (navigator.language || 'en').toLowerCase();
+      initial = nav.indexOf('fr') === 0 ? 'fr' : 'en';
+    }
+    activate(initial);
+
+    window.addEventListener('hashchange', function () {
+      var h = fromHash();
+      if (h) activate(h);
+    });
+  })();
+</script>
+</body>
+</html>
