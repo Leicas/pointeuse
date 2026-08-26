@@ -9,7 +9,34 @@ import app.tauri.Logger
 import com.plugin.scheduletask.ScheduleTaskPlugin
 
 class MainActivity : TauriActivity() {
+    companion object {
+        // tao's ndk_glue can only initialize once per process: a second
+        // Activity creation in a warm process aborts with
+        // "ndk-context assertion failed: previous.is_none()". When Android
+        // hands us a recycled process that already hosted an activity,
+        // relaunch into a fresh process instead of crashing.
+        private var activityCreatedInThisProcess = false
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        if (activityCreatedInThisProcess) {
+            Logger.warn("[MainActivity] Second activity creation in warm process — restarting process cleanly")
+            val relaunch = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            }
+            if (relaunch != null) {
+                val pi = android.app.PendingIntent.getActivity(
+                    applicationContext, 0, relaunch,
+                    android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_ONE_SHOT
+                )
+                val am = getSystemService(ALARM_SERVICE) as android.app.AlarmManager
+                am.set(android.app.AlarmManager.RTC, System.currentTimeMillis() + 300, pi)
+            }
+            android.os.Process.killProcess(android.os.Process.myPid())
+            return
+        }
+        activityCreatedInThisProcess = true
+
         enableEdgeToEdge()
 
         // Initialize WorkManager with our custom factory BEFORE super.onCreate()
