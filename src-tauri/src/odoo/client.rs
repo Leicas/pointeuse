@@ -60,7 +60,14 @@ impl OdooClient {
         let database = database.to_string();
         let username = username.to_string();
         let password = password.to_string();
-        let http = reqwest::Client::new();
+        log::info!("OdooClient::connect to {url} (db: {database}) as {username}");
+        // Explicit timeouts: without them a dropped/filtered connection hangs
+        // forever and the login UI never shows an error.
+        let http = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(15))
+            .timeout(std::time::Duration::from_secs(45))
+            .build()
+            .map_err(|e| AppError::Odoo(format!("HTTP client build failed: {e}")))?;
 
         // --- authenticate --------------------------------------------------
         let uid_val = xmlrpc::call_xmlrpc(

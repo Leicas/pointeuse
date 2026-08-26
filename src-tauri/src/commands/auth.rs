@@ -133,7 +133,11 @@ async fn probe_odoo_saas_database(url: &str) -> Option<String> {
 }
 
 async fn detect_database_list(url: &str) -> AppResult<Vec<String>> {
-    let http = reqwest::Client::new();
+    let http = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(20))
+        .build()
+        .map_err(|e| AppError::Odoo(format!("HTTP client build failed: {e}")))?;
     match xmlrpc::call_xmlrpc(&http, url, "/xmlrpc/2/db", "list", vec![]).await {
         Ok(XmlRpcValue::Array(arr)) => {
             Ok(arr.into_iter().filter_map(|v| v.as_str().map(String::from)).collect())
@@ -175,7 +179,10 @@ pub async fn login(
 
     let client = OdooClient::connect(&url, &database, &username, &password)
         .await
-        .map_err(|e| AppError::Auth(format!("Login failed: {e}")))?;
+        .map_err(|e| {
+            log::error!("Login failed for '{username}' at {url}: {e}");
+            AppError::Auth(format!("Login failed: {e}"))
+        })?;
 
     let uid = client.uid();
 
