@@ -1,3 +1,10 @@
+## [1.4.1](https://github.com/Leicas/pointeuse/compare/v1.4.0...v1.4.1) (2026-08-26)
+
+
+### Bug Fixes
+
+* **android:** drop USE_EXACT_ALARM permission for Play policy compliance ([#4](https://github.com/Leicas/pointeuse/issues/4)) ([1271108](https://github.com/Leicas/pointeuse/commit/1271108bdd1fe30613acfbe97b65be7f6870189e))
+
 # [1.4.0](https://github.com/Leicas/pointeuse/compare/v1.3.0...v1.4.0) (2026-08-04)
 
 
