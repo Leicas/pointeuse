@@ -504,6 +504,20 @@ fn parse_method_response(xml: &str) -> AppResult<XmlRpcValue> {
 /// * `endpoint` – XML-RPC endpoint path, e.g. `/xmlrpc/2/common`
 /// * `method`   – XML-RPC method name, e.g. `authenticate`
 /// * `args`     – positional parameters wrapped in `XmlRpcValue`
+/// Full error chain ("error sending request -> dns error -> ..."): reqwest's
+/// top-level Display hides the actual cause, which is the part we need when
+/// diagnosing connection failures in the field.
+fn error_chain(e: &dyn std::error::Error) -> String {
+    let mut chain = e.to_string();
+    let mut src = e.source();
+    while let Some(s) = src {
+        chain.push_str(" -> ");
+        chain.push_str(&s.to_string());
+        src = s.source();
+    }
+    chain
+}
+
 pub async fn call_xmlrpc(
     client: &reqwest::Client,
     url: &str,
@@ -522,10 +536,19 @@ pub async fn call_xmlrpc(
         .header("Content-Type", "text/xml")
         .body(body)
         .send()
-        .await?;
+        .await
+        .map_err(|e| {
+            let chain = error_chain(&e);
+            log::error!("XML-RPC send failed for {full_url}: {chain}");
+            AppError::Odoo(format!("Request to {full_url} failed: {chain}"))
+        })?;
 
     let status = resp.status();
-    let text = resp.text().await?;
+    let text = resp.text().await.map_err(|e| {
+        let chain = error_chain(&e);
+        log::error!("XML-RPC body read failed for {full_url}: {chain}");
+        AppError::Odoo(format!("Reading response from {full_url} failed: {chain}"))
+    })?;
 
     if !status.is_success() {
         return Err(AppError::Odoo(format!(
