@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pointeuse — Time tracking for Odoo / Suivi du temps pour Odoo</title>
+<meta name="description" content="Pointeuse is a fast, native, open-source time tracker for Odoo — desktop (Windows, Linux, macOS) and Android.">
+<link rel="icon" href="https://raw.githubusercontent.com/Leicas/pointeuse/main/app-icon.png">
+<style>
+  :root {
+    --bg: #f2f5f7;
+    --fg: #16211c;
+    --muted: #4e5f57;
+    --accent: #0f766e;
+    --accent-soft: #2dd4bf;
+    --card: #ffffff;
+    --border: #d5dfdb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1513;
+      --fg: #e2ece8;
+      --muted: #93a69e;
+      --accent: #2dd4bf;
+      --accent-soft: #0f766e;
+      --card: #16201c;
+      --border: #2a3833;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    padding: 2rem 1rem 4rem;
+  }
+  main { max-width: 900px; margin: 0 auto; }
+  header.hero {
+    display: flex; flex-direction: column; align-items: center;
+    text-align: center; gap: 0.75rem; margin: 1rem 0 0.5rem;
+  }
+  header.hero img.logo { width: 96px; height: 96px; border-radius: 22px; }
+  h1 { font-size: 2.2rem; margin: 0; color: var(--accent); }
+  .tagline { font-size: 1.15rem; color: var(--muted); max-width: 620px; margin: 0; }
+  .lang-switch {
+    margin: 1.25rem auto 0; display: inline-flex; gap: 0.5rem;
+    background: var(--card); padding: 0.25rem; border-radius: 999px;
+    border: 1px solid var(--border);
+  }
+  .lang-switch a {
+    padding: 0.35rem 0.9rem; border-radius: 999px;
+    text-decoration: none; color: var(--muted); font-weight: 600;
+  }
+  .lang-switch a.active { background: var(--accent); color: #fff; }
+  section.lang { display: none; }
+  section.lang.active { display: block; }
+  h2 {
+    color: var(--accent); margin-top: 2.5rem; font-size: 1.3rem;
+    border-bottom: 1px solid var(--border); padding-bottom: 0.3rem;
+  }
+  p, li { color: var(--fg); }
+  .muted { color: var(--muted); font-size: 0.92rem; }
+  ul { padding-left: 1.25rem; }
+  a { color: var(--accent); }
+  .btn-row { display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center; margin: 1.5rem 0 0.5rem; }
+  .btn {
+    display: inline-block; padding: 0.65rem 1.3rem; border-radius: 10px;
+    text-decoration: none; font-weight: 600; border: 1px solid var(--border);
+    background: var(--card); color: var(--fg);
+  }
+  .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn.disabled {
+    opacity: 0.55; cursor: default; pointer-events: none;
+    border-style: dashed;
+  }
+  .shots { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: center; margin: 1.5rem 0; }
+  .shots figure { margin: 0; text-align: center; }
+  .shots img {
+    max-width: 100%; border-radius: 12px; border: 1px solid var(--border);
+    box-shadow: 0 6px 24px rgba(0,0,0,0.12);
+  }
+  .shots .small img { width: 280px; }
+  .shots .wide img { width: 100%; max-width: 820px; }
+  .shots figcaption { font-size: 0.85rem; color: var(--muted); margin-top: 0.4rem; }
+  .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; margin-top: 1.25rem; }
+  .feature {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 1rem 1.1rem;
+  }
+  .feature h3 { margin: 0 0 0.4rem; font-size: 1rem; color: var(--accent); }
+  .feature p { margin: 0; font-size: 0.93rem; color: var(--muted); }
+  .steps { counter-reset: step; list-style: none; padding: 0; margin: 1rem 0; }
+  .steps li {
+    counter-increment: step; position: relative; padding: 0.85rem 1rem 0.85rem 3.2rem;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; margin-bottom: 0.6rem;
+  }
+  .steps li::before {
+    content: counter(step);
+    position: absolute; left: 0.9rem; top: 50%; transform: translateY(-50%);
+    width: 1.7rem; height: 1.7rem; border-radius: 50%;
+    background: var(--accent); color: #fff; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; font-size: 0.9rem;
+  }
+  .pill {
+    display: inline-block; font-size: 0.75rem; font-weight: 700;
+    padding: 0.15rem 0.6rem; border-radius: 999px;
+    background: var(--accent-soft); color: var(--bg); vertical-align: middle;
+    margin-left: 0.4rem;
+  }
+  footer {
+    margin-top: 3rem; padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 0.85rem; text-align: center;
+  }
+</style>
+</head>
+<body>
+<main>
+  <header class="hero">
+    <img class="logo" src="https://raw.githubusercontent.com/Leicas/pointeuse/main/app-icon.png" alt="Pointeuse logo">
+    <h1>Pointeuse</h1>
+  </header>
+
+  <div style="text-align:center">
+    <div class="lang-switch" role="tablist">
+      <a href="#en" id="tab-en" class="active">English</a>
+      <a href="#fr" id="tab-fr">Français</a>
+    </div>
+  </div>
+
+  <!-- ======================= EN ======================= -->
+  <section id="en" class="lang active">
+    <p class="tagline" style="text-align:center; margin: 1.25rem auto 0;">
+      A fast, native time tracker for <a href="https://www.odoo.com/">Odoo</a> —
+      on desktop (Windows / Linux / macOS) and Android. Free and
+      <a href="https://github.com/Leicas/pointeuse">open source</a>.
+      <em>Pointeuse</em> is French for a punch clock.
+    </p>
+
+    <div class="btn-row">
+      <a class="btn primary" href="https://github.com/Leicas/pointeuse/releases/latest">⬇ Download for desktop &amp; Android</a>
+      <a class="btn disabled" href="#" aria-disabled="true">Google Play — coming soon</a>
+      <a class="btn" href="#en-beta">Join the Android beta</a>
+    </div>
+
+    <div class="shots">
+      <figure class="small">
+        <img src="screenshots/connect.png" alt="Connect to your Odoo workspace" loading="lazy">
+        <figcaption>Connect to any Odoo instance</figcaption>
+      </figure>
+      <figure class="small">
+        <img src="screenshots/timer.png" alt="Timer window with today's tasks" loading="lazy">
+        <figcaption>Track time with today's totals at a glance</figcaption>
+      </figure>
+      <figure class="wide">
+        <img src="screenshots/dashboard.png" alt="Task dashboard — kanban grouped by stage" loading="lazy">
+        <figcaption>Task dashboard — kanban by stage, effort bars, one-click timer start</figcaption>
+      </figure>
+    </div>
+
+    <h2>What it does</h2>
+    <div class="features">
+      <div class="feature"><h3>Track time on Odoo tasks</h3><p>Start/stop a timer on any task — timesheets land straight in Odoo.</p></div>
+      <div class="feature"><h3>Attendance built in</h3><p>Check in / out from the app or the system tray; the timer auto-stops when you check out anywhere else.</p></div>
+      <div class="feature"><h3>Synced across devices</h3><p>Start a timer on your phone, your desktop picks it up — and stopping anywhere stops it everywhere. No extra server: it runs over your Odoo.</p></div>
+      <div class="feature"><h3>Offline-first</h3><p>Everything is cached locally; timesheets queue offline and sync when the connection returns.</p></div>
+      <div class="feature"><h3>Idle reminders</h3><p>A gentle popup asks what you're working on, with quick-switch suggestions.</p></div>
+      <div class="feature"><h3>Private by design</h3><p>No analytics, no ads, no third-party servers — your data only ever goes to <em>your</em> Odoo. <a href="privacy.html">Privacy policy</a>.</p></div>
+    </div>
+
+    <h2 id="en-beta">Join the Android closed beta <span class="pill">BETA</span></h2>
+    <p>
+      Pointeuse is heading to Google Play. While it's in closed testing, you can
+      get the Play version (with automatic updates) in two steps:
+    </p>
+    <ol class="steps">
+      <li>Join the tester group: <a href="https://groups.google.com/g/opentest_awd">groups.google.com/g/opentest_awd</a> — click "Join group" with the Google account you use on your Android device.</li>
+      <li>Opt in to testing at <a href="https://play.google.com/apps/testing/fr.weill_duflos.pointeuse">play.google.com/apps/testing/fr.weill_duflos.pointeuse</a>, then install Pointeuse from the Play Store link it gives you. <span class="muted">(This link goes live once the first beta is approved by Google — check back soon.)</span></li>
+    </ol>
+    <p class="muted">
+      Can't wait? You can sideload the APK right now from the
+      <a href="https://github.com/Leicas/pointeuse/releases/latest">latest GitHub release</a>
+      (<code>pointeuse-vX.Y.Z-android-universal.apk</code>).
+    </p>
+
+    <h2>How it connects</h2>
+    <p>
+      Pointeuse talks to any Odoo 14+ instance over standard XML-RPC — no
+      server-side module to install. You need your server URL, database name,
+      and your login with a password or an API key (required for Odoo Online).
+      Credentials are stored in your system keyring, never on disk.
+    </p>
+  </section>
+
+  <!-- ======================= FR ======================= -->
+  <section id="fr" class="lang">
+    <p class="tagline" style="text-align:center; margin: 1.25rem auto 0;">
+      Une pointeuse rapide et native pour <a href="https://www.odoo.com/">Odoo</a> —
+      sur ordinateur (Windows / Linux / macOS) et Android. Gratuite et
+      <a href="https://github.com/Leicas/pointeuse">open source</a>.
+    </p>
+
+    <div class="btn-row">
+      <a class="btn primary" href="https://github.com/Leicas/pointeuse/releases/latest">⬇ Télécharger (bureau &amp; Android)</a>
+      <a class="btn disabled" href="#" aria-disabled="true">Google Play — bientôt</a>
+      <a class="btn" href="#fr-beta">Rejoindre la bêta Android</a>
+    </div>
+
+    <div class="shots">
+      <figure class="small">
+        <img src="screenshots/connect.png" alt="Connexion à votre espace Odoo" loading="lazy">
+        <figcaption>Connexion à n'importe quelle instance Odoo</figcaption>
+      </figure>
+      <figure class="small">
+        <img src="screenshots/timer.png" alt="Fenêtre du minuteur avec les tâches du jour" loading="lazy">
+        <figcaption>Suivez votre temps, totaux du jour en un coup d'œil</figcaption>
+      </figure>
+      <figure class="wide">
+        <img src="screenshots/dashboard.png" alt="Tableau de bord des tâches — kanban par étape" loading="lazy">
+        <figcaption>Tableau de bord — kanban par étape, démarrage du minuteur en un clic</figcaption>
+      </figure>
+    </div>
+
+    <h2>Ce qu'elle fait</h2>
+    <div class="features">
+      <div class="feature"><h3>Suivi du temps sur les tâches Odoo</h3><p>Démarrez/arrêtez un minuteur sur n'importe quelle tâche — les feuilles de temps arrivent directement dans Odoo.</p></div>
+      <div class="feature"><h3>Présences intégrées</h3><p>Pointez l'arrivée/le départ depuis l'app ou la barre système ; le minuteur s'arrête automatiquement si vous partez ailleurs.</p></div>
+      <div class="feature"><h3>Synchronisée entre appareils</h3><p>Démarrez un minuteur sur votre téléphone, votre ordinateur le reprend — et l'arrêt se propage partout. Aucun serveur en plus : tout passe par votre Odoo.</p></div>
+      <div class="feature"><h3>Hors-ligne d'abord</h3><p>Tout est mis en cache localement ; les saisies s'enfilent hors-ligne et se synchronisent au retour de la connexion.</p></div>
+      <div class="feature"><h3>Rappels d'inactivité</h3><p>Une fenêtre discrète vous demande sur quoi vous travaillez, avec des suggestions rapides.</p></div>
+      <div class="feature"><h3>Privée par conception</h3><p>Pas d'analyse, pas de pub, pas de serveur tiers — vos données ne vont que vers <em>votre</em> Odoo. <a href="privacy.html#fr">Politique de confidentialité</a>.</p></div>
+    </div>
+
+    <h2 id="fr-beta">Rejoindre la bêta fermée Android <span class="pill">BÊTA</span></h2>
+    <p>
+      Pointeuse arrive sur Google Play. Pendant la phase de test fermé, vous
+      pouvez obtenir la version Play (avec mises à jour automatiques) en deux
+      étapes :
+    </p>
+    <ol class="steps">
+      <li>Rejoignez le groupe de testeurs : <a href="https://groups.google.com/g/opentest_awd">groups.google.com/g/opentest_awd</a> — cliquez sur « Rejoindre le groupe » avec le compte Google utilisé sur votre appareil Android.</li>
+      <li>Activez le test sur <a href="https://play.google.com/apps/testing/fr.weill_duflos.pointeuse">play.google.com/apps/testing/fr.weill_duflos.pointeuse</a>, puis installez Pointeuse depuis le lien Play Store fourni. <span class="muted">(Ce lien sera actif dès que la première bêta sera approuvée par Google — revenez bientôt.)</span></li>
+    </ol>
+    <p class="muted">
+      Pressé·e ? Vous pouvez installer l'APK dès maintenant depuis la
+      <a href="https://github.com/Leicas/pointeuse/releases/latest">dernière release GitHub</a>
+      (<code>pointeuse-vX.Y.Z-android-universal.apk</code>).
+    </p>
+
+    <h2>Comment elle se connecte</h2>
+    <p>
+      Pointeuse communique avec toute instance Odoo 14+ via XML-RPC standard —
+      aucun module serveur à installer. Il vous faut l'URL du serveur, le nom de
+      la base et votre identifiant avec mot de passe ou clé API (obligatoire
+      pour Odoo Online). Les identifiants sont stockés dans le trousseau du
+      système, jamais sur disque.
+    </p>
+  </section>
+
+  <footer>
+    Pointeuse is open source (MIT) —
+    <a href="https://github.com/Leicas/pointeuse">github.com/Leicas/pointeuse</a>
+    · <a href="privacy.html">Privacy / Confidentialité</a>
+    · <a href="mailto:antoine@weill-duflos.fr">Contact</a>
+  </footer>
+</main>
+
+<script>
+  (function () {
+    var tabs = { en: document.getElementById('tab-en'), fr: document.getElementById('tab-fr') };
+    var sections = { en: document.getElementById('en'), fr: document.getElementById('fr') };
+
+    function activate(lang) {
+      if (!tabs[lang]) lang = 'en';
+      Object.keys(tabs).forEach(function (k) {
+        tabs[k].classList.toggle('active', k === lang);
+        sections[k].classList.toggle('active', k === lang);
+      });
+      document.documentElement.setAttribute('lang', lang);
+    }
+
+    function fromHash() {
+      var h = (location.hash || '').replace('#', '');
+      if (h === 'fr' || h === 'en') return h;
+      if (h.indexOf('fr-') === 0) return 'fr';
+      if (h.indexOf('en-') === 0) return 'en';
+      return null;
+    }
+
+    var initial = fromHash();
+    if (!initial) {
+      var nav = (navigator.language || 'en').toLowerCase();
+      initial = nav.indexOf('fr') === 0 ? 'fr' : 'en';
+    }
+    activate(initial);
+
+    window.addEventListener('hashchange', function () {
+      var h = fromHash();
+      if (h) activate(h);
+    });
+  })();
+</script>
+</body>
+</html>
