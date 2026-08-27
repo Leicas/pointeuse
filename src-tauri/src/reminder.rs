@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU32, Ordering};
 use tauri::{AppHandle, Emitter, Manager};
 #[cfg(desktop)]
 use tauri::{WebviewUrl, WebviewWindowBuilder};
@@ -596,6 +597,25 @@ fn handle_idle_reminder(app: &AppHandle) -> tauri_plugin_schedule_task::Result<(
 // Background attendance check (mobile — fires from scheduled task)
 // ---------------------------------------------------------------------------
 
+/// Base cadence of the scheduled attendance check.
+const ATTENDANCE_BASE_SECS: u64 = 120;
+/// Ceiling while Odoo stays unreachable. Android's background network policy
+/// can block the app outright (DNS errors on every request), so consecutive
+/// failures double the reschedule delay up to this instead of retrying at
+/// full cadence; the first success resets it.
+const ATTENDANCE_MAX_SECS: u64 = 600;
+/// The failed retries are identical, so after the first one log only every Nth.
+const ATTENDANCE_LOG_EVERY: u32 = 5;
+
+/// Consecutive failed fetches. The check has no loop to hold state — each fire
+/// comes fresh out of WorkManager — so the counter lives here.
+static ATTENDANCE_FAILURES: AtomicU32 = AtomicU32::new(0);
+
+/// Doubling per consecutive failure: 240s, 480s, then capped at 10 min.
+fn attendance_backoff_secs(failures: u32) -> u64 {
+    (ATTENDANCE_BASE_SECS << failures.min(3)).min(ATTENDANCE_MAX_SECS)
+}
+
 async fn handle_attendance_check(app: &AppHandle) {
     log::info!("[attendance] Scheduled attendance check fired");
 
@@ -615,10 +635,16 @@ async fn handle_attendance_check(app: &AppHandle) {
     };
 
     let status = match client.get_attendance_status().await {
-        Ok(s) => s,
+        Ok(s) => {
+            ATTENDANCE_FAILURES.store(0, Ordering::Relaxed);
+            s
+        }
         Err(e) => {
-            log::error!("[attendance] Failed to fetch status: {e}");
-            schedule_attendance_check(app).await;
+            let failures = ATTENDANCE_FAILURES.fetch_add(1, Ordering::Relaxed) + 1;
+            if failures == 1 || failures % ATTENDANCE_LOG_EVERY == 0 {
+                log::error!("[attendance] Failed to fetch status ({failures}x in a row): {e}");
+            }
+            schedule_attendance_check_in(app, attendance_backoff_secs(failures)).await;
             return;
         }
     };
@@ -651,17 +677,24 @@ async fn handle_attendance_check(app: &AppHandle) {
 
 /// Schedule the next attendance check via WorkManager (mobile only).
 pub async fn schedule_attendance_check(app: &AppHandle) {
+    schedule_attendance_check_in(app, ATTENDANCE_BASE_SECS).await;
+}
+
+async fn schedule_attendance_check_in(app: &AppHandle, delay_secs: u64) {
     use tauri_plugin_schedule_task::ScheduleTaskExt;
 
     let request = tauri_plugin_schedule_task::ScheduleTaskRequest {
         task_name: "attendance_check".to_string(),
-        schedule_time: tauri_plugin_schedule_task::ScheduleTime::Duration(120), // every 2 minutes
+        schedule_time: tauri_plugin_schedule_task::ScheduleTime::Duration(delay_secs),
         parameters: None,
     };
 
     match app.schedule_task().schedule_task(request).await {
         Ok(response) if response.success => {
-            log::info!("[attendance] Scheduled next check in 2m (task_id: {})", response.task_id);
+            log::info!(
+                "[attendance] Scheduled next check in {delay_secs}s (task_id: {})",
+                response.task_id
+            );
         }
         Ok(response) => {
             log::error!("[attendance] Schedule failed: {}", response.message.unwrap_or_default());
@@ -784,5 +817,19 @@ pub fn cancel_scheduled_reminder(app: &AppHandle) {
         }
     } else {
         log::info!("[reminder] No scheduled reminder to cancel");
+    }
+}
+
+#[cfg(test)]
+mod attendance_backoff_tests {
+    use super::*;
+
+    #[test]
+    fn failed_checks_back_off_to_a_ceiling() {
+        assert_eq!(attendance_backoff_secs(0), 120, "base cadence untouched");
+        assert_eq!(attendance_backoff_secs(1), 240);
+        assert_eq!(attendance_backoff_secs(2), 480);
+        assert_eq!(attendance_backoff_secs(3), 600);
+        assert_eq!(attendance_backoff_secs(99), 600, "must stay capped");
     }
 }

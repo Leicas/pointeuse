@@ -49,6 +49,18 @@ const POLL_BACKGROUND_SECS: u64 = 60;
 /// Ceilings once the reconciler has had nothing to do for a while.
 const POLL_FOREGROUND_MAX_SECS: u64 = 120;
 const POLL_BACKGROUND_MAX_SECS: u64 = 600;
+/// Extra clamp on the poll while Odoo cannot be reached at all, applied on
+/// mobile only. Android's background network policy can cut the app off
+/// entirely (every request dies with a DNS error), and the webview still
+/// reports itself visible, so the quiet backoff alone keeps retrying at the
+/// brisk foreground cadence. Double per consecutive failure up to 10 min; a
+/// success or a `nudge()` (app resume, timer command) resets it. Desktop keeps
+/// its normal cadence.
+const NET_FAILURE_BASE_SECS: u64 = 60;
+const NET_FAILURE_MAX_SECS: u64 = 600;
+/// The retries are identical while the network is down, so log the first
+/// consecutive failure and then only every Nth.
+const FAILURE_LOG_EVERY: u32 = 10;
 /// Consecutive empty polls before concluding another device ended the run.
 /// One is not enough: a single failed or racy read would drop a live timer.
 const MISSING_POLLS_BEFORE_STOP: u32 = 2;
@@ -175,6 +187,23 @@ mod marker_tests {
 
         // Never faster than the base, however the counter is fed.
         assert!(poll_interval(true, 0) <= poll_interval(true, 1));
+    }
+
+    #[test]
+    fn network_failures_back_off_and_log_sparsely() {
+        // Doubling per consecutive failure, capped at ten minutes.
+        assert_eq!(net_failure_backoff(1), 60);
+        assert_eq!(net_failure_backoff(2), 120);
+        assert_eq!(net_failure_backoff(4), 480);
+        assert_eq!(net_failure_backoff(5), 600);
+        assert_eq!(net_failure_backoff(99), 600, "must stay capped");
+
+        // First failure logged, then only every Nth.
+        assert!(should_log_failure(1));
+        assert!(!should_log_failure(2));
+        assert!(should_log_failure(FAILURE_LOG_EVERY));
+        assert!(!should_log_failure(FAILURE_LOG_EVERY + 1));
+        assert!(should_log_failure(FAILURE_LOG_EVERY * 2));
     }
 
     #[test]
@@ -756,15 +785,29 @@ struct Pulled {
 }
 
 /// Reconcile what Odoo says is running with what this device is running.
-async fn pull(app: &AppHandle, client: &OdooClient, missing_polls: &mut u32) -> Pulled {
+async fn pull(
+    app: &AppHandle,
+    client: &OdooClient,
+    missing_polls: &mut u32,
+    net_failures: &mut u32,
+) -> Pulled {
     let since = (chrono::Local::now() - chrono::Duration::days(1))
         .format("%Y-%m-%d")
         .to_string();
 
     let lines = match client.find_live_lines(MARKER, &since).await {
-        Ok(l) => l,
+        Ok(l) => {
+            *net_failures = 0;
+            l
+        }
         Err(e) => {
-            log::warn!("devicesync: live-session poll failed: {e}");
+            *net_failures = net_failures.saturating_add(1);
+            if should_log_failure(*net_failures) {
+                log::warn!(
+                    "devicesync: live-session poll failed ({}x in a row): {e}",
+                    *net_failures
+                );
+            }
             return Pulled { ours_is_live: None, changed: false };
         }
     };
@@ -1041,6 +1084,7 @@ async fn reconcile(
     exchange: bool,
     last_heartbeat: &mut Option<(String, Instant)>,
     missing_polls: &mut u32,
+    net_failures: &mut u32,
 ) -> bool {
     let (lock, my_device) = {
         let state = app.state::<AppState>();
@@ -1056,7 +1100,7 @@ async fn reconcile(
 
     // Pull before push: the push needs to know whether our line is still live
     // in Odoo before it writes anything to it.
-    let pulled = pull(app, client, missing_polls).await;
+    let pulled = pull(app, client, missing_polls, net_failures).await;
     changed |= pulled.changed;
     changed |= push(app, client, &my_device, pulled.ours_is_live, last_heartbeat).await;
     // `pull` may have queued losing sessions; settle them without waiting a
@@ -1077,6 +1121,16 @@ fn poll_interval(visible: bool, quiet_passes: u32) -> u64 {
     (base << quiet_passes.min(4)).min(cap)
 }
 
+/// See [`NET_FAILURE_BASE_SECS`]: doubling per consecutive failed pass.
+fn net_failure_backoff(failures: u32) -> u64 {
+    (NET_FAILURE_BASE_SECS << failures.saturating_sub(1).min(4)).min(NET_FAILURE_MAX_SECS)
+}
+
+/// First consecutive failure, then only every [`FAILURE_LOG_EVERY`]th.
+fn should_log_failure(failures: u32) -> bool {
+    failures == 1 || failures % FAILURE_LOG_EVERY == 0
+}
+
 pub async fn run_sync_loop(app: AppHandle) {
     use tokio::time::{sleep, Duration as TokioDuration};
 
@@ -1087,30 +1141,48 @@ pub async fn run_sync_loop(app: AppHandle) {
     let mut missing_polls: u32 = 0;
     let mut last_recents: Option<Instant> = None;
     let mut quiet_passes: u32 = 0;
+    let mut net_failures: u32 = 0;
 
     loop {
         let exchange = sync_enabled(&app);
         if let Some(client) = current_client(&app) {
-            let changed =
-                reconcile(&app, &client, exchange, &mut last_heartbeat, &mut missing_polls).await;
+            let changed = reconcile(
+                &app,
+                &client,
+                exchange,
+                &mut last_heartbeat,
+                &mut missing_polls,
+                &mut net_failures,
+            )
+            .await;
             quiet_passes = if changed { 0 } else { quiet_passes.saturating_add(1) };
 
             let recents_due = last_recents
                 .map(|at| at.elapsed() >= Duration::from_secs(RECENTS_REFRESH_SECS))
                 .unwrap_or(true);
-            if exchange && recents_due {
+            if exchange && recents_due && net_failures == 0 {
                 pull_recent_tasks(&app, &client).await;
                 last_recents = Some(Instant::now());
             }
         }
 
-        let interval = poll_interval(window_visible(&app), quiet_passes);
+        let mut interval = poll_interval(window_visible(&app), quiet_passes);
+        // Mobile only: while Odoo is unreachable (Android's background network
+        // policy blocks the app outright), stretch the doomed retries instead
+        // of hammering. Desktop keeps its normal cadence.
+        if cfg!(mobile) && net_failures > 0 {
+            interval = interval.max(net_failure_backoff(net_failures));
+        }
         let wakeup = app.state::<AppState>().sync_wakeup.clone();
         tokio::select! {
             _ = sleep(TokioDuration::from_secs(interval)) => {}
-            // Someone asked for a pass now — treat it as activity so the next
-            // few passes stay responsive too.
-            _ = wakeup.notified() => { quiet_passes = 0; }
+            // Someone asked for a pass now (timer command, window focus / app
+            // resume) — treat it as activity so the next few passes stay
+            // responsive, and give the network the benefit of the doubt.
+            _ = wakeup.notified() => {
+                quiet_passes = 0;
+                net_failures = 0;
+            }
         }
     }
 }
