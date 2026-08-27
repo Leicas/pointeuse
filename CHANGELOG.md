@@ -1,3 +1,10 @@
+## [1.4.3](https://github.com/Leicas/pointeuse/compare/v1.4.2...v1.4.3) (2026-08-27)
+
+
+### Bug Fixes
+
+* **sync:** back off background polls on consecutive network failures ([092c472](https://github.com/Leicas/pointeuse/commit/092c472bc08ccab3462d4ec6624eb65f6e9c25b8))
+
 ## [1.4.2](https://github.com/Leicas/pointeuse/compare/v1.4.1...v1.4.2) (2026-08-26)
 
 
