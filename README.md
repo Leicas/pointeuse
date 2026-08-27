@@ -51,7 +51,7 @@ Grab the latest installer from [Releases](https://github.com/Leicas/pointeuse/re
 - **Windows**: `Pointeuse_x.y.z_x64-setup.exe` (auto-updates)
 - **Linux**: `.AppImage` or `.deb`
 - **macOS**: `.dmg` (universal)
-- **Android**: `pointeuse-vx.y.z-android-universal.apk` (sideload)
+- **Android**: closed beta on Google Play — [how to join](https://leicas.github.io/pointeuse/#en-beta) — or sideload `pointeuse-vx.y.z-android-universal.apk`
 
 ## Development
 
