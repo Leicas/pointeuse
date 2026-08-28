@@ -39,7 +39,7 @@ There is only a handful of unit tests (`cargo test`), covering pure logic such a
 | `lib.rs` | Tauri setup, command registration, background task spawning |
 | `state.rs` | `AppState` struct (db, odoo client, timer, reminder, attendance) |
 | `error.rs` | `AppError` enum with thiserror, serializes to JSON for frontend |
-| `commands/` | Tauri command handlers (auth, timer, tasks, timesheet, attendance, reminder, sync, projects, autostart, analysis) |
+| `commands/` | Tauri command handlers (auth, timer, tasks, timesheet, attendance, reminder, sync, projects, autostart, analysis, diagnostics) |
 | `odoo/` | `OdooClient` + XML-RPC protocol implementation + model structs |
 | `timer/` | `TimerEngine` (start/stop/state) + crash-recovery persistence |
 | `reminder.rs` | Idle reminder background loop + popup window management |
@@ -107,5 +107,6 @@ GitHub Actions: `ci.yml` (clippy + Android cross-check on PRs/pushes) and `relea
 
 - Commits follow [Conventional Commits](https://www.conventionalcommits.org/) (required for semantic-release)
 - Rust errors go through `AppError` / `AppResult<T>` — never panic in command handlers
+- Crash reporting: Sentry (EU ingest). The `sentry` crate is pinned to `=0.46.0` — later versions require reqwest 0.13, whose rustls feature pulls `rustls-platform-verifier` and panics on Android (same class of bug the reqwest 0.12 pin avoids). Frontend JS errors reach Sentry via `src/errors.js` → `report_frontend_error` command; no browser SDK. Crash reports are technical-data-only (`send_default_pii: false`) — documented in `docs/privacy.html`, keep that page in sync
 - The frontend has no build tooling — UI changes go in `src/main.js` / `src/dashboard.js`
 - Main window is 480x680px with custom titlebar (decorations disabled)

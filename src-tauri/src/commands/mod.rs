@@ -1,6 +1,7 @@
 pub mod analysis;
 pub mod attendance;
 pub mod auth;
+pub mod diagnostics;
 pub mod autostart;
 pub mod projects;
 pub mod reminder;

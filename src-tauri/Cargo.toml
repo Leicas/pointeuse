@@ -36,6 +36,11 @@ png = "0.18"
 tauri-plugin-notification = "2.3.3"
 tauri-plugin-schedule-task = { git = "https://github.com/charlesschaefer/tauri-plugin-schedule-task", branch = "main" }
 tauri-plugin-opener = "2"
+# Crash reporting. Pinned to exactly 0.46.0: it is the last release on
+# reqwest 0.12 (0.46.1+ jump to reqwest 0.13, whose rustls feature drags in
+# rustls-platform-verifier — the Android panic the reqwest pin above avoids).
+# default-features = false also drops the native-tls default transport.
+sentry = { version = "=0.46.0", default-features = false, features = ["backtrace", "contexts", "panic", "reqwest", "rustls"] }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 tauri-plugin-autostart = "2"

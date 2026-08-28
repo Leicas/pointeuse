@@ -63,6 +63,22 @@ class MainActivity : TauriActivity() {
         handleScheduledTaskIntent(intent)
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        // tao's ndk_glue can only initialize once per process, so once this
+        // activity is gone the cached process can never host another one —
+        // Android relaunching into it would hit the warm-process guard above,
+        // which the OS surfaces as an "app keeps stopping" crash dialog.
+        // With no live activity, exiting here is an ordinary background
+        // process death: the next launch is a clean cold start instead.
+        // Skip config-change recreation, where a new activity follows
+        // immediately in this same process.
+        if (!isChangingConfigurations) {
+            Logger.info("[MainActivity] Activity destroyed — exiting process so the next launch cold-starts")
+            android.os.Process.killProcess(android.os.Process.myPid())
+        }
+    }
+
     private fun handleScheduledTaskIntent(intent: Intent?) {
         if (intent == null || !intent.hasExtra("run_task")) return
 

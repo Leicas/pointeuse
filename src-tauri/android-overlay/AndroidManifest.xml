@@ -18,7 +18,10 @@
         android:theme="@style/Theme.time_tracker"
         android:usesCleartextTraffic="${usesCleartextTraffic}">
         <activity
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
+            <!-- density/fontScale included: any config change NOT listed here
+                 recreates the activity, which a Tauri process cannot survive
+                 (tao ndk_glue single-init) and ends in a visible crash. -->
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|layoutDirection|density|fontScale|smallestScreenSize|screenLayout|uiMode"
             android:launchMode="singleTask"
             android:label="@string/main_activity_title"
             android:name=".MainActivity"
