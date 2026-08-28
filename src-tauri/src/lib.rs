@@ -184,6 +184,21 @@ async fn run_attendance_poll(app_handle: tauri::AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Crash reporting: captures Rust panics (background loops included) with
+    // stack traces. The guard must outlive the app so queued events flush on
+    // exit; leak it since run() never returns on some platforms.
+    let guard = sentry::init((
+        "https://ae406e8d413b16d961363bd30dcfcd8e@o4511989242265600.ingest.de.sentry.io/4511989253210192",
+        sentry::ClientOptions {
+            release: sentry::release_name!(),
+            // No PII: only crash/stack data plus OS/device context is sent
+            // (see the privacy policy). Odoo credentials never enter events.
+            send_default_pii: false,
+            ..Default::default()
+        },
+    ));
+    std::mem::forget(guard);
+
     let builder = tauri::Builder::default();
 
     // The single-instance plugin must be registered FIRST (per Tauri guidance):
@@ -487,6 +502,7 @@ pub fn run() {
             commands::settings::get_default_task,
             commands::settings::set_default_task,
             commands::settings::clear_default_task,
+            commands::diagnostics::report_frontend_error,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
