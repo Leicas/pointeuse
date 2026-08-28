@@ -1,3 +1,10 @@
+## [1.4.4](https://github.com/Leicas/pointeuse/compare/v1.4.3...v1.4.4) (2026-08-28)
+
+
+### Bug Fixes
+
+* **android:** stop "keeps stopping" crashes + add Sentry crash reporting ([#7](https://github.com/Leicas/pointeuse/issues/7)) ([7848829](https://github.com/Leicas/pointeuse/commit/7848829164546f801d0e38af4c7de81e91f7f206))
+
 ## [1.4.3](https://github.com/Leicas/pointeuse/compare/v1.4.2...v1.4.3) (2026-08-27)
 
 
