@@ -1,3 +1,10 @@
+## [1.4.5](https://github.com/Leicas/pointeuse/compare/v1.4.4...v1.4.5) (2026-08-28)
+
+
+### Bug Fixes
+
+* unbreak Android release build, green CI lint, silence desktop notification ACL error ([#8](https://github.com/Leicas/pointeuse/issues/8)) ([cb4f4d0](https://github.com/Leicas/pointeuse/commit/cb4f4d00d9741b687d959efc0377399cc5f0822a))
+
 ## [1.4.4](https://github.com/Leicas/pointeuse/compare/v1.4.3...v1.4.4) (2026-08-28)
 
 
