@@ -837,7 +837,10 @@ try {
 // plugin fires an "actionPerformed" event. We use this to handle:
 //   - Tapping the ongoing timer notification → show the app (already foregrounded)
 //   - Tapping the reminder notification → open the task picker for quick-switch
-try {
+// registerListener only exists in the plugin's mobile implementation; on
+// desktop the invoke is rejected by the ACL. That rejection is async, so the
+// try/catch never saw it — it surfaced as an unhandled rejection in Sentry.
+if (/android/i.test(navigator.userAgent)) try {
   window.__TAURI__?.core?.addPluginListener?.('notification', 'actionPerformed', async (event) => {
     const actionId = event?.actionId || 'tap';
     const extra = event?.notification?.extra || {};
@@ -878,7 +881,7 @@ try {
       return;
     }
     // Ongoing timer notification tapped (id 9001) → just bring app to front (already done by Android)
-  });
+  })?.catch?.(() => {});
 } catch (_) {}
 
 // ── Global sync progress bar ────────────────────────────────────────

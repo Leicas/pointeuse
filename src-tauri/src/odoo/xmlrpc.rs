@@ -497,13 +497,6 @@ fn parse_method_response(xml: &str) -> AppResult<XmlRpcValue> {
 // Public API
 // ---------------------------------------------------------------------------
 
-/// Perform an XML-RPC call against an Odoo instance.
-///
-/// * `client`   – shared reqwest client
-/// * `url`      – base URL of the Odoo instance, e.g. `https://mycompany.odoo.com`
-/// * `endpoint` – XML-RPC endpoint path, e.g. `/xmlrpc/2/common`
-/// * `method`   – XML-RPC method name, e.g. `authenticate`
-/// * `args`     – positional parameters wrapped in `XmlRpcValue`
 /// Full error chain ("error sending request -> dns error -> ..."): reqwest's
 /// top-level Display hides the actual cause, which is the part we need when
 /// diagnosing connection failures in the field.
@@ -518,6 +511,13 @@ fn error_chain(e: &dyn std::error::Error) -> String {
     chain
 }
 
+/// Perform an XML-RPC call against an Odoo instance.
+///
+/// * `client`   – shared reqwest client
+/// * `url`      – base URL of the Odoo instance, e.g. `https://mycompany.odoo.com`
+/// * `endpoint` – XML-RPC endpoint path, e.g. `/xmlrpc/2/common`
+/// * `method`   – XML-RPC method name, e.g. `authenticate`
+/// * `args`     – positional parameters wrapped in `XmlRpcValue`
 pub async fn call_xmlrpc(
     client: &reqwest::Client,
     url: &str,
