@@ -214,11 +214,17 @@ pub fn run() {
         }
     }));
 
+    // schedule-task backs the Android WorkManager reminders/attendance checks and
+    // is only ever called under #[cfg(mobile)]. Its desktop init spawns a Tokio
+    // task that calls `block_on` inside the runtime, which panics with "Cannot
+    // start a runtime from within a runtime" on every launch — so register it on
+    // mobile only. Desktop reminders use the in-process loop in `reminder.rs`.
+    #[cfg(mobile)]
+    let builder = builder.plugin(tauri_plugin_schedule_task::init_with_handler(
+        reminder::ScheduledTaskRouter,
+    ));
+
     let builder = builder
-        // schedule-task must be initialized first (required by plugin for desktop scheduling)
-        .plugin(tauri_plugin_schedule_task::init_with_handler(
-            reminder::ScheduledTaskRouter,
-        ))
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
