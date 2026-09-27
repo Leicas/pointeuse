@@ -1,3 +1,10 @@
+## [1.4.6](https://github.com/Leicas/pointeuse/compare/v1.4.5...v1.4.6) (2026-09-27)
+
+
+### Bug Fixes
+
+* stop schedule-task plugin panicking on desktop startup ([#9](https://github.com/Leicas/pointeuse/issues/9)) ([7371735](https://github.com/Leicas/pointeuse/commit/7371735d5afaab2a9789eed5545986882ec51c60))
+
 ## [1.4.5](https://github.com/Leicas/pointeuse/compare/v1.4.4...v1.4.5) (2026-08-28)
 
 
