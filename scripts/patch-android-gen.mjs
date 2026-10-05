@@ -10,9 +10,11 @@
 //   2. Replaces the generated AndroidManifest.xml with
 //      android-overlay/AndroidManifest.xml, substituting the detected theme.
 //      The overlay manifest adds: notification/alarm/boot permissions, the
-//      schedule-task plugin receivers, a FileProvider, and disables default
-//      WorkManager init so MainActivity can install a custom WorkerFactory.
-//   3. Copies the 4 overlay Kotlin files into the generated package dir,
+//      schedule-task plugin receiver, a FileProvider, points android:name at
+//      PointeuseApplication and disables default WorkManager init so that
+//      Application (Configuration.Provider) installs a custom WorkerFactory
+//      from any process entry point (activity, job service, receiver).
+//   3. Copies the overlay Kotlin files into the generated package dir,
 //      substituting `__APP_PACKAGE__` with the detected package. The overlay
 //      MainActivity.kt intentionally REPLACES the generated one.
 //
@@ -81,8 +83,8 @@ for (const kt of readdirSync(overlayDir).filter((f) => f.endsWith('.kt'))) {
 // --- 4) Ensure the app module depends on WorkManager ------------------------
 // AppWorkerFactory / MainActivity / ScheduledTaskWorkerOverride import
 // androidx.work.*, and the overlay manifest disables Tauri's default
-// WorkManager auto-init so MainActivity installs a custom WorkerFactory via
-// on-demand initialization. The schedule-task plugin pulls WorkManager in only
+// WorkManager auto-init so PointeuseApplication installs a custom WorkerFactory
+// via on-demand initialization. The schedule-task plugin pulls WorkManager in only
 // as `implementation`, so it is not exposed to the app module — without this
 // the app's Kotlin fails to compile (Unresolved reference: WorkManager/Worker/
 // WorkerFactory/...). Declare it directly on the app module.
