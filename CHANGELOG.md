@@ -1,3 +1,10 @@
+## [1.4.7](https://github.com/Leicas/pointeuse/compare/v1.4.6...v1.4.7) (2026-10-05)
+
+
+### Bug Fixes
+
+* **android:** stop background WorkManager crashes + unbreak Android CI/release ([#10](https://github.com/Leicas/pointeuse/issues/10)) ([50879b7](https://github.com/Leicas/pointeuse/commit/50879b774c407f19c7cebd22deacd885e94e49fc))
+
 ## [1.4.6](https://github.com/Leicas/pointeuse/compare/v1.4.5...v1.4.6) (2026-09-27)
 
 
