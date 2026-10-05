@@ -5276,7 +5276,7 @@ dependencies = [
 
 [[package]]
 name = "time-tracker"
-version = "1.4.3"
+version = "1.4.6"
 dependencies = [
  "chrono",
  "keyring",
