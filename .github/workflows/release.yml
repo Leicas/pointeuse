@@ -222,7 +222,11 @@ jobs:
           java-version: '17'
 
       - if: env.HAS_KEYSTORE == 'true'
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          # v3 defaulted to installing the legacy 'tools' SDK package, which Google
+          # removed from the repository (sdkmanager: Failed to find package 'tools').
+          packages: platform-tools
 
       - name: Cache Android NDK
         if: env.HAS_KEYSTORE == 'true'

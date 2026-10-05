@@ -1,7 +1,11 @@
 use serde::{Deserialize, Serialize};
+#[cfg(mobile)]
 use std::collections::HashMap;
+#[cfg(mobile)]
 use std::sync::atomic::{AtomicU32, Ordering};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
+#[cfg(mobile)]
+use tauri::Emitter;
 #[cfg(desktop)]
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 use tokio::time::{self, Duration};
@@ -18,6 +22,7 @@ pub struct ReminderState {
     pub interval_minutes: u64,
     pub popup_showing: bool,
     /// ID of the currently scheduled reminder task (mobile only)
+    #[cfg_attr(not(mobile), allow(dead_code))]
     pub scheduled_task_id: Option<String>,
     /// Set to true when a task switch occurs; the reminder loop resets its counter
     pub reset_elapsed: bool,
@@ -474,11 +479,17 @@ pub async fn run_reminder_loop(app_handle: AppHandle) {
 
 // ---------------------------------------------------------------------------
 // Scheduled task handler (mobile — uses tauri-plugin-schedule-task)
+//
+// Everything below is #[cfg(mobile)]: the plugin is only registered on mobile
+// (see lib.rs), so on desktop these items would be dead code. The pure
+// backoff helper stays compiled everywhere so its unit test runs on desktop.
 // ---------------------------------------------------------------------------
 
 /// Handler invoked by the schedule-task plugin when any scheduled task fires.
+#[cfg(mobile)]
 pub struct ScheduledTaskRouter;
 
+#[cfg(mobile)]
 impl tauri_plugin_schedule_task::ScheduledTaskHandler<tauri::Wry> for ScheduledTaskRouter {
     fn handle_scheduled_task(
         &self,
@@ -505,6 +516,7 @@ impl tauri_plugin_schedule_task::ScheduledTaskHandler<tauri::Wry> for ScheduledT
     }
 }
 
+#[cfg(mobile)]
 fn handle_idle_reminder(app: &AppHandle) -> tauri_plugin_schedule_task::Result<()> {
 
         let state = app.state::<AppState>();
@@ -598,24 +610,30 @@ fn handle_idle_reminder(app: &AppHandle) -> tauri_plugin_schedule_task::Result<(
 // ---------------------------------------------------------------------------
 
 /// Base cadence of the scheduled attendance check.
+#[cfg_attr(not(mobile), allow(dead_code))]
 const ATTENDANCE_BASE_SECS: u64 = 120;
 /// Ceiling while Odoo stays unreachable. Android's background network policy
 /// can block the app outright (DNS errors on every request), so consecutive
 /// failures double the reschedule delay up to this instead of retrying at
 /// full cadence; the first success resets it.
+#[cfg_attr(not(mobile), allow(dead_code))]
 const ATTENDANCE_MAX_SECS: u64 = 600;
 /// The failed retries are identical, so after the first one log only every Nth.
+#[cfg(mobile)]
 const ATTENDANCE_LOG_EVERY: u32 = 5;
 
 /// Consecutive failed fetches. The check has no loop to hold state — each fire
 /// comes fresh out of WorkManager — so the counter lives here.
+#[cfg(mobile)]
 static ATTENDANCE_FAILURES: AtomicU32 = AtomicU32::new(0);
 
 /// Doubling per consecutive failure: 240s, 480s, then capped at 10 min.
+#[cfg_attr(not(mobile), allow(dead_code))]
 fn attendance_backoff_secs(failures: u32) -> u64 {
     (ATTENDANCE_BASE_SECS << failures.min(3)).min(ATTENDANCE_MAX_SECS)
 }
 
+#[cfg(mobile)]
 async fn handle_attendance_check(app: &AppHandle) {
     log::info!("[attendance] Scheduled attendance check fired");
 
@@ -676,10 +694,12 @@ async fn handle_attendance_check(app: &AppHandle) {
 }
 
 /// Schedule the next attendance check via WorkManager (mobile only).
+#[cfg(mobile)]
 pub async fn schedule_attendance_check(app: &AppHandle) {
     schedule_attendance_check_in(app, ATTENDANCE_BASE_SECS).await;
 }
 
+#[cfg(mobile)]
 async fn schedule_attendance_check_in(app: &AppHandle, delay_secs: u64) {
     use tauri_plugin_schedule_task::ScheduleTaskExt;
 
@@ -711,6 +731,7 @@ async fn schedule_attendance_check_in(app: &AppHandle, delay_secs: u64) {
 
 /// Schedule the next reminder notification via the schedule-task plugin.
 /// Cancels any existing scheduled reminder first.
+#[cfg(mobile)]
 pub async fn schedule_next_reminder(app: &AppHandle) {
     use tauri_plugin_schedule_task::ScheduleTaskExt;
 
@@ -796,6 +817,7 @@ pub async fn schedule_next_reminder(app: &AppHandle) {
 }
 
 /// Cancel any pending scheduled reminder.
+#[cfg(mobile)]
 #[allow(dead_code)]
 pub fn cancel_scheduled_reminder(app: &AppHandle) {
     use tauri_plugin_schedule_task::ScheduleTaskExt;

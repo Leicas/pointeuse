@@ -3,8 +3,6 @@ package __APP_PACKAGE__
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.enableEdgeToEdge
-import androidx.work.Configuration
-import androidx.work.WorkManager
 import app.tauri.Logger
 import com.plugin.scheduletask.ScheduleTaskPlugin
 
@@ -39,15 +37,9 @@ class MainActivity : TauriActivity() {
 
         enableEdgeToEdge()
 
-        // Initialize WorkManager with our custom factory BEFORE super.onCreate()
-        // (auto-init is disabled in the manifest)
-        if (!WorkManager.isInitialized()) {
-            val config = Configuration.Builder()
-                .setWorkerFactory(AppWorkerFactory())
-                .build()
-            WorkManager.initialize(this, config)
-            Logger.info("[MainActivity] WorkManager initialized with custom WorkerFactory")
-        }
+        // WorkManager is initialized on demand by PointeuseApplication
+        // (Configuration.Provider) so that it also works when Android starts
+        // this process for SystemJobService alone, with no activity.
 
         super.onCreate(savedInstanceState)
 
