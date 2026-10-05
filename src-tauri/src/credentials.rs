@@ -2,6 +2,7 @@ use crate::error::AppResult;
 #[cfg(desktop)]
 use crate::error::AppError;
 
+#[cfg(desktop)]
 const SERVICE: &str = "time-tracker-app";
 
 /// Store an Odoo password/API-key in the OS credential store.
@@ -67,12 +68,6 @@ pub fn clear_credentials(username: &str) -> AppResult<()> {
 pub fn save_credentials(_username: &str, _password: &str) -> AppResult<()> {
     // On mobile, password is stored via the Tauri store in auth.rs
     Ok(())
-}
-
-#[cfg(mobile)]
-pub fn load_credentials(_username: &str) -> AppResult<Option<String>> {
-    // On mobile, password is loaded from the Tauri store in auth.rs
-    Ok(None)
 }
 
 #[cfg(mobile)]
