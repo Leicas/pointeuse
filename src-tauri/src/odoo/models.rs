@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
-use super::xmlrpc::XmlRpcValue;
+use super::jsonrpc::OdooValue;
 
 // ---------------------------------------------------------------------------
 // Model structs
@@ -56,52 +56,52 @@ pub struct OdooEmployee {
 // ---------------------------------------------------------------------------
 
 /// Extract a string field from an Odoo struct value, returning `""` if missing.
-fn get_string(map: &std::collections::HashMap<String, XmlRpcValue>, key: &str) -> String {
+fn get_string(map: &std::collections::HashMap<String, OdooValue>, key: &str) -> String {
     map.get(key)
         .and_then(|v| match v {
-            XmlRpcValue::String(s) => Some(s.clone()),
-            XmlRpcValue::Bool(false) | XmlRpcValue::Nil => Some(String::new()),
+            OdooValue::String(s) => Some(s.clone()),
+            OdooValue::Bool(false) | OdooValue::Nil => Some(String::new()),
             _ => None,
         })
         .unwrap_or_default()
 }
 
 /// Extract an optional string field (None for Odoo `false`/nil).
-fn get_opt_string(map: &std::collections::HashMap<String, XmlRpcValue>, key: &str) -> Option<String> {
+fn get_opt_string(map: &std::collections::HashMap<String, OdooValue>, key: &str) -> Option<String> {
     match map.get(key) {
-        Some(XmlRpcValue::String(s)) => Some(s.clone()),
-        Some(XmlRpcValue::Bool(false)) | Some(XmlRpcValue::Nil) | None => None,
+        Some(OdooValue::String(s)) => Some(s.clone()),
+        Some(OdooValue::Bool(false)) | Some(OdooValue::Nil) | None => None,
         _ => None,
     }
 }
 
 /// Extract an i64 field (also handles doubles that Odoo sometimes returns).
-fn get_i64(map: &std::collections::HashMap<String, XmlRpcValue>, key: &str) -> AppResult<i64> {
+fn get_i64(map: &std::collections::HashMap<String, OdooValue>, key: &str) -> AppResult<i64> {
     map.get(key)
         .and_then(|v| v.as_i64())
         .ok_or_else(|| AppError::Odoo(format!("Missing or invalid int field '{key}'")))
 }
 
 /// Extract a float field.
-fn get_f64(map: &std::collections::HashMap<String, XmlRpcValue>, key: &str) -> f64 {
+fn get_f64(map: &std::collections::HashMap<String, OdooValue>, key: &str) -> f64 {
     map.get(key)
         .and_then(|v| v.as_f64())
         .unwrap_or(0.0)
 }
 
 /// Extract a many2one `(id, name)` tuple. Returns `None` when Odoo sends `false`.
-fn get_many2one(map: &std::collections::HashMap<String, XmlRpcValue>, key: &str) -> Option<(i64, String)> {
+fn get_many2one(map: &std::collections::HashMap<String, OdooValue>, key: &str) -> Option<(i64, String)> {
     map.get(key).and_then(|v| v.as_many2one())
 }
 
 // ---------------------------------------------------------------------------
-// Conversions from XmlRpcValue
+// Conversions from OdooValue
 // ---------------------------------------------------------------------------
 
-impl TryFrom<&XmlRpcValue> for OdooProject {
+impl TryFrom<&OdooValue> for OdooProject {
     type Error = AppError;
 
-    fn try_from(val: &XmlRpcValue) -> AppResult<Self> {
+    fn try_from(val: &OdooValue) -> AppResult<Self> {
         let map = val
             .as_struct()
             .ok_or_else(|| AppError::Odoo("Expected struct for OdooProject".into()))?;
@@ -112,10 +112,10 @@ impl TryFrom<&XmlRpcValue> for OdooProject {
     }
 }
 
-impl TryFrom<&XmlRpcValue> for OdooTask {
+impl TryFrom<&OdooValue> for OdooTask {
     type Error = AppError;
 
-    fn try_from(val: &XmlRpcValue) -> AppResult<Self> {
+    fn try_from(val: &OdooValue) -> AppResult<Self> {
         let map = val
             .as_struct()
             .ok_or_else(|| AppError::Odoo("Expected struct for OdooTask".into()))?;
@@ -123,11 +123,11 @@ impl TryFrom<&XmlRpcValue> for OdooTask {
 
         // Parse user_ids: Odoo many2many returns as array of integers
         let user_ids = match map.get("user_ids") {
-            Some(XmlRpcValue::Array(arr)) => {
+            Some(OdooValue::Array(arr)) => {
                 let ids: Vec<i64> = arr.iter().filter_map(|v| v.as_i64()).collect();
                 if ids.is_empty() { None } else { Some(ids) }
             }
-            Some(XmlRpcValue::Bool(false)) | Some(XmlRpcValue::Nil) | None => None,
+            Some(OdooValue::Bool(false)) | Some(OdooValue::Nil) | None => None,
             _ => None,
         };
 
@@ -161,10 +161,10 @@ impl TryFrom<&XmlRpcValue> for OdooTask {
     }
 }
 
-impl TryFrom<&XmlRpcValue> for OdooTimesheetEntry {
+impl TryFrom<&OdooValue> for OdooTimesheetEntry {
     type Error = AppError;
 
-    fn try_from(val: &XmlRpcValue) -> AppResult<Self> {
+    fn try_from(val: &OdooValue) -> AppResult<Self> {
         let map = val
             .as_struct()
             .ok_or_else(|| AppError::Odoo("Expected struct for OdooTimesheetEntry".into()))?;
@@ -179,10 +179,10 @@ impl TryFrom<&XmlRpcValue> for OdooTimesheetEntry {
     }
 }
 
-impl TryFrom<&XmlRpcValue> for OdooEmployee {
+impl TryFrom<&OdooValue> for OdooEmployee {
     type Error = AppError;
 
-    fn try_from(val: &XmlRpcValue) -> AppResult<Self> {
+    fn try_from(val: &OdooValue) -> AppResult<Self> {
         let map = val
             .as_struct()
             .ok_or_else(|| AppError::Odoo("Expected struct for OdooEmployee".into()))?;
@@ -193,11 +193,11 @@ impl TryFrom<&XmlRpcValue> for OdooEmployee {
     }
 }
 
-/// Convert a Vec<XmlRpcValue> (from search_read) into typed models.
+/// Convert a Vec<OdooValue> (from search_read) into typed models.
 /// Logs and skips records that fail to parse instead of aborting.
-pub fn parse_records<T>(records: Vec<XmlRpcValue>) -> AppResult<Vec<T>>
+pub fn parse_records<T>(records: Vec<OdooValue>) -> AppResult<Vec<T>>
 where
-    T: for<'a> TryFrom<&'a XmlRpcValue, Error = AppError>,
+    T: for<'a> TryFrom<&'a OdooValue, Error = AppError>,
 {
     let total = records.len();
     let mut results = Vec::with_capacity(total);

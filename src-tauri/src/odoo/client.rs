@@ -5,7 +5,7 @@ use chrono::Utc;
 use crate::error::{AppError, AppResult};
 use super::attendance::AttendanceStatus;
 use super::models::{self, OdooProject, OdooTask};
-use super::xmlrpc::{self, XmlRpcValue};
+use super::jsonrpc::{self, OdooValue};
 
 // ---------------------------------------------------------------------------
 // OdooClient
@@ -49,7 +49,7 @@ impl OdooClient {
 
     // -- constructor ---------------------------------------------------------
 
-    /// Authenticate with Odoo via XML-RPC and return a connected client.
+    /// Authenticate with Odoo via JSON-RPC and return a connected client.
     pub async fn connect(
         url: &str,
         database: &str,
@@ -70,16 +70,16 @@ impl OdooClient {
             .map_err(|e| AppError::Odoo(format!("HTTP client build failed: {e}")))?;
 
         // --- authenticate --------------------------------------------------
-        let uid_val = xmlrpc::call_xmlrpc(
+        let uid_val = jsonrpc::call_jsonrpc(
             &http,
             &url,
-            "/xmlrpc/2/common",
+            "common",
             "authenticate",
             vec![
-                XmlRpcValue::String(database.clone()),
-                XmlRpcValue::String(username.clone()),
-                XmlRpcValue::String(password.clone()),
-                XmlRpcValue::Struct(HashMap::new()),
+                OdooValue::String(database.clone()),
+                OdooValue::String(username.clone()),
+                OdooValue::String(password.clone()),
+                OdooValue::Struct(HashMap::new()),
             ],
         )
         .await?;
@@ -116,10 +116,10 @@ impl OdooClient {
         match client
             .search_read(
                 "hr.employee",
-                vec![XmlRpcValue::Array(vec![
-                    XmlRpcValue::String("user_id".into()),
-                    XmlRpcValue::String("=".into()),
-                    XmlRpcValue::Int(uid),
+                vec![OdooValue::Array(vec![
+                    OdooValue::String("user_id".into()),
+                    OdooValue::String("=".into()),
+                    OdooValue::Int(uid),
                 ])],
                 vec!["id".into(), "name".into()],
                 Some(1),
@@ -128,7 +128,7 @@ impl OdooClient {
         {
             Ok(records) if !records.is_empty() => {
                 if let Some(map) = records[0].as_struct() {
-                    if let Some(XmlRpcValue::Int(eid)) = map.get("id") {
+                    if let Some(OdooValue::Int(eid)) = map.get("id") {
                         client.employee_id = Some(*eid);
                         log::info!("Employee id: {eid}");
                     }
@@ -153,23 +153,23 @@ impl OdooClient {
         &self,
         model: &str,
         method: &str,
-        args: Vec<XmlRpcValue>,
-        kwargs: Option<XmlRpcValue>,
-    ) -> AppResult<XmlRpcValue> {
-        let kw = kwargs.unwrap_or_else(|| XmlRpcValue::Struct(HashMap::new()));
+        args: Vec<OdooValue>,
+        kwargs: Option<OdooValue>,
+    ) -> AppResult<OdooValue> {
+        let kw = kwargs.unwrap_or_else(|| OdooValue::Struct(HashMap::new()));
 
-        xmlrpc::call_xmlrpc(
+        jsonrpc::call_jsonrpc(
             &self.http,
             &self.url,
-            "/xmlrpc/2/object",
+            "object",
             "execute_kw",
             vec![
-                XmlRpcValue::String(self.database.clone()),
-                XmlRpcValue::Int(self.uid),
-                XmlRpcValue::String(self.password.clone()),
-                XmlRpcValue::String(model.into()),
-                XmlRpcValue::String(method.into()),
-                XmlRpcValue::Array(args),
+                OdooValue::String(self.database.clone()),
+                OdooValue::Int(self.uid),
+                OdooValue::String(self.password.clone()),
+                OdooValue::String(model.into()),
+                OdooValue::String(method.into()),
+                OdooValue::Array(args),
                 kw,
             ],
         )
@@ -183,21 +183,21 @@ impl OdooClient {
     pub async fn search_read(
         &self,
         model: &str,
-        domain: Vec<XmlRpcValue>,
+        domain: Vec<OdooValue>,
         fields: Vec<String>,
         limit: Option<i64>,
-    ) -> AppResult<Vec<XmlRpcValue>> {
+    ) -> AppResult<Vec<OdooValue>> {
         let mut kwargs = HashMap::new();
 
         // fields
-        let fields_val: Vec<XmlRpcValue> = fields
+        let fields_val: Vec<OdooValue> = fields
             .into_iter()
-            .map(XmlRpcValue::String)
+            .map(OdooValue::String)
             .collect();
-        kwargs.insert("fields".into(), XmlRpcValue::Array(fields_val));
+        kwargs.insert("fields".into(), OdooValue::Array(fields_val));
 
         if let Some(lim) = limit {
-            kwargs.insert("limit".into(), XmlRpcValue::Int(lim));
+            kwargs.insert("limit".into(), OdooValue::Int(lim));
         }
 
         log::info!("search_read: model={model}, limit={:?}", limit);
@@ -206,17 +206,17 @@ impl OdooClient {
             .execute_kw(
                 model,
                 "search_read",
-                vec![XmlRpcValue::Array(domain)],
-                Some(XmlRpcValue::Struct(kwargs)),
+                vec![OdooValue::Array(domain)],
+                Some(OdooValue::Struct(kwargs)),
             )
             .await?;
 
         match result {
-            XmlRpcValue::Array(arr) => {
+            OdooValue::Array(arr) => {
                 log::info!("search_read: got {} records for {model}", arr.len());
                 Ok(arr)
             }
-            XmlRpcValue::Bool(false) => {
+            OdooValue::Bool(false) => {
                 log::info!("search_read: got False (empty) for {model}");
                 Ok(Vec::new())
             }
@@ -232,13 +232,13 @@ impl OdooClient {
     pub async fn create(
         &self,
         model: &str,
-        values: HashMap<String, XmlRpcValue>,
+        values: HashMap<String, OdooValue>,
     ) -> AppResult<i64> {
         let result = self
             .execute_kw(
                 model,
                 "create",
-                vec![XmlRpcValue::Struct(values)],
+                vec![OdooValue::Struct(values)],
                 None,
             )
             .await?;
@@ -252,17 +252,17 @@ impl OdooClient {
         &self,
         model: &str,
         ids: Vec<i64>,
-        values: HashMap<String, XmlRpcValue>,
+        values: HashMap<String, OdooValue>,
     ) -> AppResult<bool> {
-        let id_vals: Vec<XmlRpcValue> = ids.into_iter().map(XmlRpcValue::Int).collect();
+        let id_vals: Vec<OdooValue> = ids.into_iter().map(OdooValue::Int).collect();
 
         let result = self
             .execute_kw(
                 model,
                 "write",
                 vec![
-                    XmlRpcValue::Array(id_vals),
-                    XmlRpcValue::Struct(values),
+                    OdooValue::Array(id_vals),
+                    OdooValue::Struct(values),
                 ],
                 None,
             )
@@ -273,10 +273,10 @@ impl OdooClient {
 
     /// Delete records. Odoo returns `true` when the unlink succeeded.
     pub async fn unlink(&self, model: &str, ids: Vec<i64>) -> AppResult<bool> {
-        let id_vals: Vec<XmlRpcValue> = ids.into_iter().map(XmlRpcValue::Int).collect();
+        let id_vals: Vec<OdooValue> = ids.into_iter().map(OdooValue::Int).collect();
 
         let result = self
-            .execute_kw(model, "unlink", vec![XmlRpcValue::Array(id_vals)], None)
+            .execute_kw(model, "unlink", vec![OdooValue::Array(id_vals)], None)
             .await?;
 
         Ok(result.as_bool().unwrap_or(false))
@@ -315,18 +315,18 @@ impl OdooClient {
         let mut domain = Vec::new();
 
         if !query.is_empty() {
-            domain.push(XmlRpcValue::Array(vec![
-                XmlRpcValue::String("name".into()),
-                XmlRpcValue::String("ilike".into()),
-                XmlRpcValue::String(query.into()),
+            domain.push(OdooValue::Array(vec![
+                OdooValue::String("name".into()),
+                OdooValue::String("ilike".into()),
+                OdooValue::String(query.into()),
             ]));
         }
 
         if let Some(pid) = project_id {
-            domain.push(XmlRpcValue::Array(vec![
-                XmlRpcValue::String("project_id".into()),
-                XmlRpcValue::String("=".into()),
-                XmlRpcValue::Int(pid),
+            domain.push(OdooValue::Array(vec![
+                OdooValue::String("project_id".into()),
+                OdooValue::String("=".into()),
+                OdooValue::Int(pid),
             ]));
         }
 
@@ -343,32 +343,32 @@ impl OdooClient {
         user_ids: &[i64],
     ) -> AppResult<Vec<OdooTask>> {
         let mut domain = vec![
-            XmlRpcValue::Array(vec![
-                XmlRpcValue::String("state".into()),
-                XmlRpcValue::String("not in".into()),
-                XmlRpcValue::Array(vec![
-                    XmlRpcValue::String("1_done".into()),
-                    XmlRpcValue::String("1_canceled".into()),
+            OdooValue::Array(vec![
+                OdooValue::String("state".into()),
+                OdooValue::String("not in".into()),
+                OdooValue::Array(vec![
+                    OdooValue::String("1_done".into()),
+                    OdooValue::String("1_canceled".into()),
                 ]),
             ]),
         ];
 
         if !project_ids.is_empty() {
-            domain.push(XmlRpcValue::Array(vec![
-                XmlRpcValue::String("project_id".into()),
-                XmlRpcValue::String("in".into()),
-                XmlRpcValue::Array(
-                    project_ids.iter().map(|id| XmlRpcValue::Int(*id)).collect(),
+            domain.push(OdooValue::Array(vec![
+                OdooValue::String("project_id".into()),
+                OdooValue::String("in".into()),
+                OdooValue::Array(
+                    project_ids.iter().map(|id| OdooValue::Int(*id)).collect(),
                 ),
             ]));
         }
 
         if !user_ids.is_empty() {
-            domain.push(XmlRpcValue::Array(vec![
-                XmlRpcValue::String("user_ids".into()),
-                XmlRpcValue::String("in".into()),
-                XmlRpcValue::Array(
-                    user_ids.iter().map(|id| XmlRpcValue::Int(*id)).collect(),
+            domain.push(OdooValue::Array(vec![
+                OdooValue::String("user_ids".into()),
+                OdooValue::String("in".into()),
+                OdooValue::Array(
+                    user_ids.iter().map(|id| OdooValue::Int(*id)).collect(),
                 ),
             ]));
         }
@@ -381,10 +381,10 @@ impl OdooClient {
 
     /// Fetch internal users from res.users (non-share users).
     pub async fn get_all_users(&self) -> AppResult<Vec<(i64, String)>> {
-        let domain = vec![XmlRpcValue::Array(vec![
-            XmlRpcValue::String("share".into()),
-            XmlRpcValue::String("=".into()),
-            XmlRpcValue::Bool(false),
+        let domain = vec![OdooValue::Array(vec![
+            OdooValue::String("share".into()),
+            OdooValue::String("=".into()),
+            OdooValue::Bool(false),
         ])];
 
         let records = self
@@ -416,17 +416,17 @@ impl OdooClient {
 
     pub async fn get_my_tasks(&self, uid: i64) -> AppResult<Vec<OdooTask>> {
         let domain = vec![
-            XmlRpcValue::Array(vec![
-                XmlRpcValue::String("user_ids".into()),
-                XmlRpcValue::String("in".into()),
-                XmlRpcValue::Array(vec![XmlRpcValue::Int(uid)]),
+            OdooValue::Array(vec![
+                OdooValue::String("user_ids".into()),
+                OdooValue::String("in".into()),
+                OdooValue::Array(vec![OdooValue::Int(uid)]),
             ]),
-            XmlRpcValue::Array(vec![
-                XmlRpcValue::String("state".into()),
-                XmlRpcValue::String("not in".into()),
-                XmlRpcValue::Array(vec![
-                    XmlRpcValue::String("1_done".into()),
-                    XmlRpcValue::String("1_canceled".into()),
+            OdooValue::Array(vec![
+                OdooValue::String("state".into()),
+                OdooValue::String("not in".into()),
+                OdooValue::Array(vec![
+                    OdooValue::String("1_done".into()),
+                    OdooValue::String("1_canceled".into()),
                 ]),
             ]),
         ];
@@ -443,8 +443,8 @@ impl OdooClient {
         project_id: i64,
     ) -> AppResult<OdooTask> {
         let mut values = HashMap::new();
-        values.insert("name".into(), XmlRpcValue::String(name.into()));
-        values.insert("project_id".into(), XmlRpcValue::Int(project_id));
+        values.insert("name".into(), OdooValue::String(name.into()));
+        values.insert("project_id".into(), OdooValue::Int(project_id));
 
         let task_id = self.create("project.task", values).await?;
 
@@ -452,10 +452,10 @@ impl OdooClient {
         let records = self
             .search_read(
                 "project.task",
-                vec![XmlRpcValue::Array(vec![
-                    XmlRpcValue::String("id".into()),
-                    XmlRpcValue::String("=".into()),
-                    XmlRpcValue::Int(task_id),
+                vec![OdooValue::Array(vec![
+                    OdooValue::String("id".into()),
+                    OdooValue::String("=".into()),
+                    OdooValue::Int(task_id),
                 ])],
                 Self::task_fields(),
                 Some(1),
@@ -474,10 +474,10 @@ impl OdooClient {
         &self,
         project_id: i64,
     ) -> AppResult<Vec<(i64, String)>> {
-        let domain = vec![XmlRpcValue::Array(vec![
-            XmlRpcValue::String("project_ids".into()),
-            XmlRpcValue::String("in".into()),
-            XmlRpcValue::Array(vec![XmlRpcValue::Int(project_id)]),
+        let domain = vec![OdooValue::Array(vec![
+            OdooValue::String("project_ids".into()),
+            OdooValue::String("in".into()),
+            OdooValue::Array(vec![OdooValue::Int(project_id)]),
         ])];
 
         let records = self
@@ -513,7 +513,7 @@ impl OdooClient {
         stage_id: i64,
     ) -> AppResult<bool> {
         let mut values = HashMap::new();
-        values.insert("stage_id".into(), XmlRpcValue::Int(stage_id));
+        values.insert("stage_id".into(), OdooValue::Int(stage_id));
         self.write("project.task", vec![task_id], values).await
     }
 
@@ -525,10 +525,10 @@ impl OdooClient {
         let records = self
             .search_read(
                 "project.task",
-                vec![XmlRpcValue::Array(vec![
-                    XmlRpcValue::String("id".into()),
-                    XmlRpcValue::String("=".into()),
-                    XmlRpcValue::Int(task_id),
+                vec![OdooValue::Array(vec![
+                    OdooValue::String("id".into()),
+                    OdooValue::String("=".into()),
+                    OdooValue::Int(task_id),
                 ])],
                 vec!["stage_id".into(), "state".into()],
                 Some(1),
@@ -553,7 +553,7 @@ impl OdooClient {
         state: &str,
     ) -> AppResult<bool> {
         let mut values = HashMap::new();
-        values.insert("state".into(), XmlRpcValue::String(state.into()));
+        values.insert("state".into(), OdooValue::String(state.into()));
         self.write("project.task", vec![task_id], values).await
     }
 
@@ -566,7 +566,7 @@ impl OdooClient {
         let mut values = HashMap::new();
         values.insert(
             "kanban_state".into(),
-            XmlRpcValue::String(kanban_state.into()),
+            OdooValue::String(kanban_state.into()),
         );
         self.write("project.task", vec![task_id], values).await
     }
@@ -578,7 +578,7 @@ impl OdooClient {
         name: &str,
     ) -> AppResult<bool> {
         let mut values = HashMap::new();
-        values.insert("name".into(), XmlRpcValue::String(name.into()));
+        values.insert("name".into(), OdooValue::String(name.into()));
         self.write("project.task", vec![task_id], values).await
     }
 
@@ -589,7 +589,7 @@ impl OdooClient {
         description: &str,
     ) -> AppResult<bool> {
         let mut values = HashMap::new();
-        values.insert("description".into(), XmlRpcValue::String(description.into()));
+        values.insert("description".into(), OdooValue::String(description.into()));
         self.write("project.task", vec![task_id], values).await
     }
 
@@ -601,8 +601,8 @@ impl OdooClient {
     ) -> AppResult<bool> {
         let mut values = HashMap::new();
         let val = match date_deadline {
-            Some(d) => XmlRpcValue::String(d.into()),
-            None => XmlRpcValue::Bool(false),
+            Some(d) => OdooValue::String(d.into()),
+            None => OdooValue::Bool(false),
         };
         values.insert("date_deadline".into(), val);
         self.write("project.task", vec![task_id], values).await
@@ -615,7 +615,7 @@ impl OdooClient {
         priority: &str,
     ) -> AppResult<bool> {
         let mut values = HashMap::new();
-        values.insert("priority".into(), XmlRpcValue::String(priority.into()));
+        values.insert("priority".into(), OdooValue::String(priority.into()));
         self.write("project.task", vec![task_id], values).await
     }
 
@@ -627,10 +627,10 @@ impl OdooClient {
         let records = self
             .search_read(
                 "project.task",
-                vec![XmlRpcValue::Array(vec![
-                    XmlRpcValue::String("id".into()),
-                    XmlRpcValue::String("=".into()),
-                    XmlRpcValue::Int(task_id),
+                vec![OdooValue::Array(vec![
+                    OdooValue::String("id".into()),
+                    OdooValue::String("=".into()),
+                    OdooValue::Int(task_id),
                 ])],
                 Self::task_fields(),
                 Some(1),
@@ -654,14 +654,14 @@ impl OdooClient {
         date: &str,
     ) -> AppResult<i64> {
         let mut values = HashMap::new();
-        values.insert("name".into(), XmlRpcValue::String(description.into()));
-        values.insert("task_id".into(), XmlRpcValue::Int(task_id));
-        values.insert("project_id".into(), XmlRpcValue::Int(project_id));
-        values.insert("unit_amount".into(), XmlRpcValue::Double(hours));
-        values.insert("date".into(), XmlRpcValue::String(date.into()));
+        values.insert("name".into(), OdooValue::String(description.into()));
+        values.insert("task_id".into(), OdooValue::Int(task_id));
+        values.insert("project_id".into(), OdooValue::Int(project_id));
+        values.insert("unit_amount".into(), OdooValue::Double(hours));
+        values.insert("date".into(), OdooValue::String(date.into()));
 
         if let Some(eid) = self.employee_id {
-            values.insert("employee_id".into(), XmlRpcValue::Int(eid));
+            values.insert("employee_id".into(), OdooValue::Int(eid));
         }
 
         let line_id = self.create("account.analytic.line", values).await?;
@@ -689,14 +689,14 @@ impl OdooClient {
         date: &str,
     ) -> AppResult<i64> {
         let mut values = HashMap::new();
-        values.insert("name".into(), XmlRpcValue::String(description.into()));
-        values.insert("task_id".into(), XmlRpcValue::Int(task_id));
-        values.insert("project_id".into(), XmlRpcValue::Int(project_id));
-        values.insert("unit_amount".into(), XmlRpcValue::Double(hours));
-        values.insert("date".into(), XmlRpcValue::String(date.into()));
+        values.insert("name".into(), OdooValue::String(description.into()));
+        values.insert("task_id".into(), OdooValue::Int(task_id));
+        values.insert("project_id".into(), OdooValue::Int(project_id));
+        values.insert("unit_amount".into(), OdooValue::Double(hours));
+        values.insert("date".into(), OdooValue::String(date.into()));
 
         if let Some(eid) = self.employee_id {
-            values.insert("employee_id".into(), XmlRpcValue::Int(eid));
+            values.insert("employee_id".into(), OdooValue::Int(eid));
         }
 
         let line_id = self.create("account.analytic.line", values).await?;
@@ -711,7 +711,7 @@ impl OdooClient {
     pub async fn update_timesheet_line(
         &self,
         line_id: i64,
-        values: HashMap<String, XmlRpcValue>,
+        values: HashMap<String, OdooValue>,
     ) -> AppResult<bool> {
         self.write("account.analytic.line", vec![line_id], values)
             .await
@@ -727,17 +727,17 @@ impl OdooClient {
     // -----------------------------------------------------------------------
 
     /// Restrict a domain to the current user's own timesheet lines.
-    fn owner_domain(&self) -> XmlRpcValue {
+    fn owner_domain(&self) -> OdooValue {
         match self.employee_id {
-            Some(eid) => XmlRpcValue::Array(vec![
-                XmlRpcValue::String("employee_id".into()),
-                XmlRpcValue::String("=".into()),
-                XmlRpcValue::Int(eid),
+            Some(eid) => OdooValue::Array(vec![
+                OdooValue::String("employee_id".into()),
+                OdooValue::String("=".into()),
+                OdooValue::Int(eid),
             ]),
-            None => XmlRpcValue::Array(vec![
-                XmlRpcValue::String("user_id".into()),
-                XmlRpcValue::String("=".into()),
-                XmlRpcValue::Int(self.uid),
+            None => OdooValue::Array(vec![
+                OdooValue::String("user_id".into()),
+                OdooValue::String("=".into()),
+                OdooValue::Int(self.uid),
             ]),
         }
     }
@@ -754,14 +754,14 @@ impl OdooClient {
         date: &str,
     ) -> AppResult<i64> {
         let mut values = HashMap::new();
-        values.insert("name".into(), XmlRpcValue::String(marked_name.into()));
-        values.insert("task_id".into(), XmlRpcValue::Int(task_id));
-        values.insert("project_id".into(), XmlRpcValue::Int(project_id));
-        values.insert("unit_amount".into(), XmlRpcValue::Double(0.0));
-        values.insert("date".into(), XmlRpcValue::String(date.into()));
+        values.insert("name".into(), OdooValue::String(marked_name.into()));
+        values.insert("task_id".into(), OdooValue::Int(task_id));
+        values.insert("project_id".into(), OdooValue::Int(project_id));
+        values.insert("unit_amount".into(), OdooValue::Double(0.0));
+        values.insert("date".into(), OdooValue::String(date.into()));
 
         if let Some(eid) = self.employee_id {
-            values.insert("employee_id".into(), XmlRpcValue::Int(eid));
+            values.insert("employee_id".into(), OdooValue::Int(eid));
         }
 
         let line_id = self.create("account.analytic.line", values).await?;
@@ -773,7 +773,7 @@ impl OdooClient {
     /// the write bumps `write_date`, which other devices read.
     pub async fn heartbeat_live_line(&self, line_id: i64, hours: f64) -> AppResult<bool> {
         let mut values = HashMap::new();
-        values.insert("unit_amount".into(), XmlRpcValue::Double(hours));
+        values.insert("unit_amount".into(), OdooValue::Double(hours));
         self.write("account.analytic.line", vec![line_id], values)
             .await
     }
@@ -790,16 +790,16 @@ impl OdooClient {
         date: &str,
     ) -> AppResult<bool> {
         let mut values = HashMap::new();
-        values.insert("name".into(), XmlRpcValue::String(clean_name.into()));
-        values.insert("unit_amount".into(), XmlRpcValue::Double(hours));
-        values.insert("date".into(), XmlRpcValue::String(date.into()));
+        values.insert("name".into(), OdooValue::String(clean_name.into()));
+        values.insert("unit_amount".into(), OdooValue::Double(hours));
+        values.insert("date".into(), OdooValue::String(date.into()));
         // A zero id means "unknown" here, not "clear the field" — writing it
         // would make Odoo reject the whole update.
         if task_id > 0 {
-            values.insert("task_id".into(), XmlRpcValue::Int(task_id));
+            values.insert("task_id".into(), OdooValue::Int(task_id));
         }
         if project_id > 0 {
-            values.insert("project_id".into(), XmlRpcValue::Int(project_id));
+            values.insert("project_id".into(), OdooValue::Int(project_id));
         }
 
         let ok = self
@@ -822,15 +822,15 @@ impl OdooClient {
         since: &str,
     ) -> AppResult<Vec<models::OdooTimesheetEntry>> {
         let domain = vec![
-            XmlRpcValue::Array(vec![
-                XmlRpcValue::String("name".into()),
-                XmlRpcValue::String("like".into()),
-                XmlRpcValue::String(marker.into()),
+            OdooValue::Array(vec![
+                OdooValue::String("name".into()),
+                OdooValue::String("like".into()),
+                OdooValue::String(marker.into()),
             ]),
-            XmlRpcValue::Array(vec![
-                XmlRpcValue::String("date".into()),
-                XmlRpcValue::String(">=".into()),
-                XmlRpcValue::String(since.into()),
+            OdooValue::Array(vec![
+                OdooValue::String("date".into()),
+                OdooValue::String(">=".into()),
+                OdooValue::String(since.into()),
             ]),
             self.owner_domain(),
         ];
@@ -872,15 +872,15 @@ impl OdooClient {
             .ok_or_else(|| AppError::Odoo("No employee record linked to this user".into()))?;
 
         let domain = vec![
-            XmlRpcValue::Array(vec![
-                XmlRpcValue::String("employee_id".into()),
-                XmlRpcValue::String("=".into()),
-                XmlRpcValue::Int(employee_id),
+            OdooValue::Array(vec![
+                OdooValue::String("employee_id".into()),
+                OdooValue::String("=".into()),
+                OdooValue::Int(employee_id),
             ]),
-            XmlRpcValue::Array(vec![
-                XmlRpcValue::String("check_out".into()),
-                XmlRpcValue::String("=".into()),
-                XmlRpcValue::Bool(false),
+            OdooValue::Array(vec![
+                OdooValue::String("check_out".into()),
+                OdooValue::String("=".into()),
+                OdooValue::Bool(false),
             ]),
         ];
 
@@ -938,8 +938,8 @@ impl OdooClient {
         let now = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
         let mut values = HashMap::new();
-        values.insert("employee_id".into(), XmlRpcValue::Int(employee_id));
-        values.insert("check_in".into(), XmlRpcValue::String(now.clone()));
+        values.insert("employee_id".into(), OdooValue::Int(employee_id));
+        values.insert("check_in".into(), OdooValue::String(now.clone()));
 
         let attendance_id = self.create("hr.attendance", values).await?;
 
@@ -962,7 +962,7 @@ impl OdooClient {
         let now = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
         let mut values = HashMap::new();
-        values.insert("check_out".into(), XmlRpcValue::String(now.clone()));
+        values.insert("check_out".into(), OdooValue::String(now.clone()));
 
         self.write("hr.attendance", vec![attendance_id], values)
             .await?;
@@ -972,15 +972,15 @@ impl OdooClient {
         // Fetch today's total worked hours
         let today_start = Utc::now().format("%Y-%m-%d 00:00:00").to_string();
         let domain = vec![
-            XmlRpcValue::Array(vec![
-                XmlRpcValue::String("employee_id".into()),
-                XmlRpcValue::String("=".into()),
-                XmlRpcValue::Int(employee_id),
+            OdooValue::Array(vec![
+                OdooValue::String("employee_id".into()),
+                OdooValue::String("=".into()),
+                OdooValue::Int(employee_id),
             ]),
-            XmlRpcValue::Array(vec![
-                XmlRpcValue::String("check_in".into()),
-                XmlRpcValue::String(">=".into()),
-                XmlRpcValue::String(today_start),
+            OdooValue::Array(vec![
+                OdooValue::String("check_in".into()),
+                OdooValue::String(">=".into()),
+                OdooValue::String(today_start),
             ]),
         ];
 
@@ -1018,20 +1018,20 @@ impl OdooClient {
         let day_end = format!("{date} 23:59:59");
 
         let domain = vec![
-            XmlRpcValue::Array(vec![
-                XmlRpcValue::String("employee_id".into()),
-                XmlRpcValue::String("=".into()),
-                XmlRpcValue::Int(employee_id),
+            OdooValue::Array(vec![
+                OdooValue::String("employee_id".into()),
+                OdooValue::String("=".into()),
+                OdooValue::Int(employee_id),
             ]),
-            XmlRpcValue::Array(vec![
-                XmlRpcValue::String("check_in".into()),
-                XmlRpcValue::String(">=".into()),
-                XmlRpcValue::String(day_start),
+            OdooValue::Array(vec![
+                OdooValue::String("check_in".into()),
+                OdooValue::String(">=".into()),
+                OdooValue::String(day_start),
             ]),
-            XmlRpcValue::Array(vec![
-                XmlRpcValue::String("check_in".into()),
-                XmlRpcValue::String("<=".into()),
-                XmlRpcValue::String(day_end),
+            OdooValue::Array(vec![
+                OdooValue::String("check_in".into()),
+                OdooValue::String("<=".into()),
+                OdooValue::String(day_end),
             ]),
         ];
 
@@ -1078,29 +1078,29 @@ impl OdooClient {
     ) -> AppResult<Vec<models::OdooTimesheetEntry>> {
         log::info!("get_timesheets_for_range: {start_date} to {end_date}");
         let mut domain = vec![
-            XmlRpcValue::Array(vec![
-                XmlRpcValue::String("date".into()),
-                XmlRpcValue::String(">=".into()),
-                XmlRpcValue::String(start_date.into()),
+            OdooValue::Array(vec![
+                OdooValue::String("date".into()),
+                OdooValue::String(">=".into()),
+                OdooValue::String(start_date.into()),
             ]),
-            XmlRpcValue::Array(vec![
-                XmlRpcValue::String("date".into()),
-                XmlRpcValue::String("<=".into()),
-                XmlRpcValue::String(end_date.into()),
+            OdooValue::Array(vec![
+                OdooValue::String("date".into()),
+                OdooValue::String("<=".into()),
+                OdooValue::String(end_date.into()),
             ]),
         ];
 
         if let Some(eid) = self.employee_id {
-            domain.push(XmlRpcValue::Array(vec![
-                XmlRpcValue::String("employee_id".into()),
-                XmlRpcValue::String("=".into()),
-                XmlRpcValue::Int(eid),
+            domain.push(OdooValue::Array(vec![
+                OdooValue::String("employee_id".into()),
+                OdooValue::String("=".into()),
+                OdooValue::Int(eid),
             ]));
         } else {
-            domain.push(XmlRpcValue::Array(vec![
-                XmlRpcValue::String("user_id".into()),
-                XmlRpcValue::String("=".into()),
-                XmlRpcValue::Int(self.uid),
+            domain.push(OdooValue::Array(vec![
+                OdooValue::String("user_id".into()),
+                OdooValue::String("=".into()),
+                OdooValue::Int(self.uid),
             ]));
         }
 
@@ -1134,28 +1134,28 @@ impl OdooClient {
 
         log::info!("get_timesheets_for_dates: checking {} dates for duplicates", dates.len());
 
-        let date_values: Vec<XmlRpcValue> = dates
+        let date_values: Vec<OdooValue> = dates
             .iter()
-            .map(|d| XmlRpcValue::String(d.clone()))
+            .map(|d| OdooValue::String(d.clone()))
             .collect();
 
-        let mut domain = vec![XmlRpcValue::Array(vec![
-            XmlRpcValue::String("date".into()),
-            XmlRpcValue::String("in".into()),
-            XmlRpcValue::Array(date_values),
+        let mut domain = vec![OdooValue::Array(vec![
+            OdooValue::String("date".into()),
+            OdooValue::String("in".into()),
+            OdooValue::Array(date_values),
         ])];
 
         if let Some(eid) = self.employee_id {
-            domain.push(XmlRpcValue::Array(vec![
-                XmlRpcValue::String("employee_id".into()),
-                XmlRpcValue::String("=".into()),
-                XmlRpcValue::Int(eid),
+            domain.push(OdooValue::Array(vec![
+                OdooValue::String("employee_id".into()),
+                OdooValue::String("=".into()),
+                OdooValue::Int(eid),
             ]));
         } else {
-            domain.push(XmlRpcValue::Array(vec![
-                XmlRpcValue::String("user_id".into()),
-                XmlRpcValue::String("=".into()),
-                XmlRpcValue::Int(self.uid),
+            domain.push(OdooValue::Array(vec![
+                OdooValue::String("user_id".into()),
+                OdooValue::String("=".into()),
+                OdooValue::Int(self.uid),
             ]));
         }
 
@@ -1184,24 +1184,24 @@ impl OdooClient {
             self.employee_id, self.uid
         );
         let mut domain = vec![
-            XmlRpcValue::Array(vec![
-                XmlRpcValue::String("date".into()),
-                XmlRpcValue::String("=".into()),
-                XmlRpcValue::String(date.into()),
+            OdooValue::Array(vec![
+                OdooValue::String("date".into()),
+                OdooValue::String("=".into()),
+                OdooValue::String(date.into()),
             ]),
         ];
 
         if let Some(eid) = self.employee_id {
-            domain.push(XmlRpcValue::Array(vec![
-                XmlRpcValue::String("employee_id".into()),
-                XmlRpcValue::String("=".into()),
-                XmlRpcValue::Int(eid),
+            domain.push(OdooValue::Array(vec![
+                OdooValue::String("employee_id".into()),
+                OdooValue::String("=".into()),
+                OdooValue::Int(eid),
             ]));
         } else {
-            domain.push(XmlRpcValue::Array(vec![
-                XmlRpcValue::String("user_id".into()),
-                XmlRpcValue::String("=".into()),
-                XmlRpcValue::Int(self.uid),
+            domain.push(OdooValue::Array(vec![
+                OdooValue::String("user_id".into()),
+                OdooValue::String("=".into()),
+                OdooValue::Int(self.uid),
             ]));
         }
 

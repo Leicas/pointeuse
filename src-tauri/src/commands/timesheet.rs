@@ -12,7 +12,7 @@ use crate::db::timesheets::{
 };
 use crate::error::{AppError, AppResult};
 use crate::odoo::models::OdooTimesheetEntry;
-use crate::odoo::xmlrpc::XmlRpcValue;
+use crate::odoo::jsonrpc::OdooValue;
 use crate::state::AppState;
 
 /// Return the last day of a given year/month as "YYYY-MM-DD".
@@ -341,9 +341,9 @@ async fn settle_pending_session(
     };
 
     let mut values = std::collections::HashMap::new();
-    values.insert("name".to_string(), XmlRpcValue::String(description.to_string()));
-    values.insert("unit_amount".to_string(), XmlRpcValue::Double(duration_hours));
-    values.insert("date".to_string(), XmlRpcValue::String(date.to_string()));
+    values.insert("name".to_string(), OdooValue::String(description.to_string()));
+    values.insert("unit_amount".to_string(), OdooValue::Double(duration_hours));
+    values.insert("date".to_string(), OdooValue::String(date.to_string()));
 
     match client.update_timesheet_line(line_id, values).await {
         Ok(_) => {
@@ -1260,11 +1260,11 @@ pub async fn update_timesheet_entry(
     };
 
     let mut values = HashMap::new();
-    values.insert("name".into(), XmlRpcValue::String(description.clone()));
-    values.insert("task_id".into(), XmlRpcValue::Int(task_id));
-    values.insert("project_id".into(), XmlRpcValue::Int(project_id));
-    values.insert("unit_amount".into(), XmlRpcValue::Double(duration_hours));
-    values.insert("date".into(), XmlRpcValue::String(date.clone()));
+    values.insert("name".into(), OdooValue::String(description.clone()));
+    values.insert("task_id".into(), OdooValue::Int(task_id));
+    values.insert("project_id".into(), OdooValue::Int(project_id));
+    values.insert("unit_amount".into(), OdooValue::Double(duration_hours));
+    values.insert("date".into(), OdooValue::String(date.clone()));
 
     match client.update_timesheet_line(odoo_id, values).await {
         Ok(_) => {

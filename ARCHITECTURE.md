@@ -20,9 +20,9 @@ Odoo's `hr.attendance` model tracks employee presence. Key fields:
 
 **How "currently checked in" works:** An employee is checked in if and only if there exists an `hr.attendance` record where `employee_id` matches AND `check_out` equals `False`. There is at most one such record per employee at any time.
 
-### A.2 XML-RPC Calls
+### A.2 JSON-RPC Calls
 
-All calls go through the existing `execute_kw` helper on `OdooClient`, which wraps `/xmlrpc/2/object` -> `execute_kw`.
+All calls go through the existing `execute_kw` helper on `OdooClient`, which wraps `/jsonrpc` (service `object`) -> `execute_kw`.
 
 #### A.2.1 Get Current Attendance Status
 
@@ -43,18 +43,18 @@ Limit:    1
 - If result is empty array: employee is **not** checked in.
 - If result has one record: employee **is** checked in. The record's `id` is the open attendance ID, and `check_in` is the start time.
 
-**Domain encoding in Rust (`XmlRpcValue`):**
+**Domain encoding in Rust (`OdooValue`):**
 ```rust
 vec![
-    XmlRpcValue::Array(vec![
-        XmlRpcValue::String("employee_id".into()),
-        XmlRpcValue::String("=".into()),
-        XmlRpcValue::Int(employee_id),
+    OdooValue::Array(vec![
+        OdooValue::String("employee_id".into()),
+        OdooValue::String("=".into()),
+        OdooValue::Int(employee_id),
     ]),
-    XmlRpcValue::Array(vec![
-        XmlRpcValue::String("check_out".into()),
-        XmlRpcValue::String("=".into()),
-        XmlRpcValue::Bool(false),
+    OdooValue::Array(vec![
+        OdooValue::String("check_out".into()),
+        OdooValue::String("=".into()),
+        OdooValue::Bool(false),
     ]),
 ]
 ```
@@ -530,7 +530,7 @@ pub mod reminder;
 
 - All attendance commands must check that `state.odoo` is `Some` (user is logged in). Return `AppError::Auth("Not logged in")` otherwise.
 - All attendance commands must check that `OdooClient::employee_id()` is `Some`. Return `AppError::Odoo("No employee record linked to this user")` otherwise.
-- The `check_out` field being `False` in Odoo maps to `XmlRpcValue::Bool(false)` in the XML-RPC response. The domain filter `["check_out", "=", false]` must use `XmlRpcValue::Bool(false)`, not `XmlRpcValue::Nil` or an empty string.
+- The `check_out` field being `False` in Odoo maps to `OdooValue::Bool(false)` in the JSON-RPC response. The domain filter `["check_out", "=", false]` must use `OdooValue::Bool(false)`, not `OdooValue::Nil` or an empty string.
 
 ---
 

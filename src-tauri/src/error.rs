@@ -8,9 +8,6 @@ pub enum AppError {
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),
 
-    #[error("XML parse error: {0}")]
-    Xml(#[from] quick_xml::Error),
-
     #[error("Odoo error: {0}")]
     Odoo(String),
 

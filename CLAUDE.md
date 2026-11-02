@@ -40,7 +40,7 @@ There is only a handful of unit tests (`cargo test`), covering pure logic such a
 | `state.rs` | `AppState` struct (db, odoo client, timer, reminder, attendance) |
 | `error.rs` | `AppError` enum with thiserror, serializes to JSON for frontend |
 | `commands/` | Tauri command handlers (auth, timer, tasks, timesheet, attendance, reminder, sync, projects, autostart, analysis, diagnostics) |
-| `odoo/` | `OdooClient` + XML-RPC protocol implementation + model structs |
+| `odoo/` | `OdooClient` + JSON-RPC transport + model structs |
 | `timer/` | `TimerEngine` (start/stop/state) + crash-recovery persistence |
 | `reminder.rs` | Idle reminder background loop + popup window management |
 | `notification.rs` | Android notification system (ongoing timer + reminder channels, `#[cfg(mobile)]`) |
@@ -52,7 +52,7 @@ There is only a handful of unit tests (`cargo test`), covering pure logic such a
 
 ### Odoo communication
 
-All Odoo interaction uses XML-RPC v2 (`/xmlrpc/2/object` via `execute_kw`). The custom XML-RPC implementation is in `odoo/xmlrpc.rs`. Key Odoo models: `hr.attendance`, `project.task`, `project.project`, `account.analytic.line`. Domain filters use `XmlRpcValue` arrays. Odoo quirk: `false` (not null) represents empty many2one fields.
+All Odoo interaction uses JSON-RPC (`POST /jsonrpc`, service `object` via `execute_kw`). The transport and `OdooValue` type are in `odoo/jsonrpc.rs`. Key Odoo models: `hr.attendance`, `project.task`, `project.project`, `account.analytic.line`. Domain filters use `XmlRpcValue` arrays. Odoo quirk: `false` (not null) represents empty many2one fields.
 
 ### Background tasks
 

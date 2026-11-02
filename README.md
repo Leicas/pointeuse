@@ -38,11 +38,11 @@ A fast, native time tracker for [Odoo](https://www.odoo.com/) — desktop (Windo
 
 ## How it connects
 
-Pointeuse talks to any Odoo 14+ instance over standard XML-RPC (`/xmlrpc/2/`) — no server-side module to install. You need:
+Pointeuse talks to any Odoo 14+ instance over Odoo's JSON-RPC endpoint (`/jsonrpc`) — no server-side module to install. You need:
 
 - your Odoo server URL
 - your database name
-- your login + password — or an **API key** (required for Odoo Online / SaaS, where the account password is blocked for external XML-RPC); stored in the system keyring, never on disk
+- your login + password — or an **API key** (required for Odoo Online / SaaS, where the account password is blocked for external RPC); stored in the system keyring, never on disk
 
 ## Install
 
