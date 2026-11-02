@@ -7,7 +7,7 @@ use crate::credentials::load_credentials;
 use crate::credentials::{clear_credentials, save_credentials};
 use crate::error::{AppError, AppResult};
 use crate::odoo::client::OdooClient;
-use crate::odoo::xmlrpc::{self, XmlRpcValue};
+use crate::odoo::jsonrpc::{self, OdooValue};
 use crate::state::AppState;
 
 const STORE_FILE: &str = "settings.json";
@@ -138,8 +138,8 @@ async fn detect_database_list(url: &str) -> AppResult<Vec<String>> {
         .timeout(std::time::Duration::from_secs(20))
         .build()
         .map_err(|e| AppError::Odoo(format!("HTTP client build failed: {e}")))?;
-    match xmlrpc::call_xmlrpc(&http, url, "/xmlrpc/2/db", "list", vec![]).await {
-        Ok(XmlRpcValue::Array(arr)) => {
+    match jsonrpc::call_jsonrpc(&http, url, "db", "list", vec![]).await {
+        Ok(OdooValue::Array(arr)) => {
             Ok(arr.into_iter().filter_map(|v| v.as_str().map(String::from)).collect())
         }
         Ok(_) => Ok(vec![]),

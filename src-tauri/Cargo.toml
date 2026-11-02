@@ -27,7 +27,6 @@ rusqlite = { version = "0.39", features = ["bundled"] }
 # ships and initializes its companion Kotlin component (Tauri does not).
 # See rustls-platform-verifier android.rs "Expect ... to be initialized".
 reqwest = { version = "0.12", features = ["rustls-tls-webpki-roots", "json"], default-features = false }
-quick-xml = "0.39"
 chrono = { version = "0.4", features = ["serde"] }
 tokio = { version = "1", features = ["rt-multi-thread", "time", "sync"] }
 thiserror = "2"
