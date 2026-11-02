@@ -1,3 +1,10 @@
+## [1.4.8](https://github.com/Leicas/pointeuse/compare/v1.4.7...v1.4.8) (2026-11-02)
+
+
+### Bug Fixes
+
+* **odoo:** migrate Odoo calls from XML-RPC to JSON-RPC for Odoo 19 ([#11](https://github.com/Leicas/pointeuse/issues/11)) ([a389417](https://github.com/Leicas/pointeuse/commit/a3894170692d58dd43c8eeaacfbd6e9cc5043336))
+
 ## [1.4.7](https://github.com/Leicas/pointeuse/compare/v1.4.6...v1.4.7) (2026-10-05)
 
 
